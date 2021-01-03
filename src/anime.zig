@@ -8,7 +8,7 @@ const json = std.json;
 const math = std.math;
 const mem = std.mem;
 
-pub const Season = enum {
+pub const Season = enum(u4) {
     spring,
     summer,
     fall,
@@ -16,16 +16,16 @@ pub const Season = enum {
     undef,
 };
 
-pub const Info = struct {
-    type: Type,
-    year: usize,
-    season: Season,
-    episodes: usize,
+pub const Info = packed struct {
     title: [255:0]u8,
     link: [255:0]u8,
     image: [255:0]u8,
+    year: u16,
+    episodes: u16,
+    type: Type,
+    season: Season,
 
-    pub const Type = enum {
+    pub const Type = enum(u4) {
         tv,
         movie,
         ova,
@@ -70,11 +70,11 @@ pub const Info = struct {
                 sources: []const []const u8,
                 title: []const u8,
                 type: enum { TV, Movie, OVA, ONA, Special },
-                episodes: usize,
+                episodes: u16,
                 status: enum { FINISHED, CURRENTLY, UPCOMING, UNKNOWN },
                 animeSeason: struct {
                     season: enum { SPRING, SUMMER, FALL, WINTER, UNDEFINED },
-                    year: ?usize,
+                    year: ?u16,
                 },
                 picture: []const u8,
                 thumbnail: []const u8,
@@ -112,10 +112,6 @@ pub const Info = struct {
         };
     }
 
-    pub fn fromDsv(row: []const u8) !Entry {
-        return (dsv(row) orelse return error.InvalidEntry).value;
-    }
-
     pub fn writeToDsv(info: Info, writer: anytype) !void {
         try writer.print("{s}\t{}\t{s}\t{}\t{s}\t{s}\t{s}", .{
             @tagName(info.type),
@@ -127,27 +123,6 @@ pub const Info = struct {
             mem.spanZ(&info.image),
         });
     }
-
-    const dsv = mecha.map(Info, mecha.toStruct(Info), mecha.combine(.{
-        mecha.convert(Type, mache.toEnum(Type), any),
-        mecha.ascii.char('\t'),
-        mecha.int(usize, 10),
-        mecha.ascii.char('\t'),
-        mecha.convert(Season, mache.toEnum(Season), any),
-        mecha.ascii.char('\t'),
-        mecha.int(usize, 10),
-        mecha.ascii.char('\t'),
-        string,
-        mecha.ascii.char('\t'),
-        string,
-        mecha.ascii.char('\t'),
-        string,
-        mecha.eos,
-    }));
-
-    const string = mecha.convert([255:0]u8, sliceToZBuf(u8, 255, 0), any);
-
-    const any = mecha.many(mecha.ascii.not(mecha.ascii.char('\t')));
 };
 
 pub const List = struct {

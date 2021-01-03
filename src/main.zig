@@ -14,8 +14,7 @@ const math = std.math;
 const mem = std.mem;
 
 const database_url = "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/anime-offline-database.json";
-const cache_csv_name = "cache.csv";
-const database_json_name = "database.json";
+const database_name = "database";
 const image_cache_name = "images";
 const list_name = "list";
 const program_name = "anilist";
@@ -73,7 +72,7 @@ pub fn main() !void {
         .help, .@"--help" => try helpMain(allocator, &args_iter),
         .fetch => try fetchMain(allocator, &args_iter),
         .list => try catMain(.data, list_name),
-        .database => try catMain(.cache, cache_csv_name),
+        .database => try catMain(.cache, database_name),
         .complete => try listManipulateMain(allocator, &args_iter, .complete),
         .drop => try listManipulateMain(allocator, &args_iter, .dropped),
         .plan_to_watch => try listManipulateMain(allocator, &args_iter, .plan_to_watch),
@@ -100,10 +99,10 @@ fn fetchMain(allocator: *mem.Allocator, args_iter: *clap.args.OsIterator) !void 
     );
     defer allocator.free(database);
 
-    var database_dsv_writing_job = async writeDatabaseDsvFile(dir, database);
+    var database_writing_job = async writeDatabaseFile(dir, database);
     var update_image_cache_job = async updateImageCache(dir, database);
 
-    try await database_dsv_writing_job;
+    try await database_writing_job;
     try await update_image_cache_job;
 }
 
@@ -137,13 +136,10 @@ fn listManipulateMain(
         var cache_dir = try openFolder(.cache, .{});
         defer cache_dir.close();
 
-        const database_json = try cache_dir.readFileAlloc(allocator, database_json_name, math.maxInt(usize));
-        defer allocator.free(database_json);
+        const database = try cache_dir.readFileAlloc(allocator, database_name, math.maxInt(usize));
+        errdefer allocator.free(database);
 
-        break :blk try anime.Info.fromJsonList(
-            &json.TokenStream.init(database_json),
-            allocator,
-        );
+        break :blk mem.bytesAsSlice(anime.Info, database);
     };
     defer allocator.free(database);
 
@@ -272,17 +268,11 @@ fn makeAndOpenDir(dir: fs.Dir, sub_path: []const u8) !fs.Dir {
     return dir.openDir(sub_path, .{});
 }
 
-fn writeDatabaseDsvFile(dir: fs.Dir, database: []const anime.Info) !void {
-    var file = try dir.atomicFile(cache_csv_name, .{});
+fn writeDatabaseFile(dir: fs.Dir, database: []const anime.Info) !void {
+    var file = try dir.atomicFile(database_name, .{});
     defer file.deinit();
 
-    const writer = io.bufferedWriter(file.file.writer()).writer();
-    for (database) |info| {
-        try info.writeToDsv(writer);
-        try writer.writeAll("\n");
-    }
-
-    try writer.context.flush();
+    try file.file.writeAll(mem.sliceAsBytes(database));
     try file.finish();
 }
 
