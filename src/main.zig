@@ -72,7 +72,7 @@ pub fn main() !void {
         .help, .@"--help" => try helpMain(allocator, &args_iter),
         .fetch => try fetchMain(allocator, &args_iter),
         .list => try catMain(.data, list_name),
-        .database => try catMain(.cache, database_name),
+        .database => try databaseMain(allocator),
         .complete => try listManipulateMain(allocator, &args_iter, .complete),
         .drop => try listManipulateMain(allocator, &args_iter, .dropped),
         .plan_to_watch => try listManipulateMain(allocator, &args_iter, .plan_to_watch),
@@ -114,6 +114,21 @@ fn catMain(folder: folders.KnownFolder, file_name: []const u8) !void {
     defer file.close();
 
     try cat(file.reader(), io.getStdOut().writer());
+}
+
+fn databaseMain(allocator: *mem.Allocator) !void {
+    var dir = try openFolder(.cache, .{});
+    defer dir.close();
+
+    const database_data = try dir.readFileAlloc(allocator, database_name, math.maxInt(usize));
+    defer allocator.free(database_data);
+
+    const stdout = io.bufferedOutStream(io.getStdOut().writer()).writer();
+    for (mem.bytesAsSlice(anime.Info, database_data)) |info| {
+        try info.writeToDsv(stdout);
+        try stdout.writeAll("\n");
+    }
+    try stdout.context.flush();
 }
 
 fn listManipulateMain(
