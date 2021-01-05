@@ -71,7 +71,7 @@ pub fn main() !void {
     switch (command) {
         .help, .@"--help" => try helpMain(allocator, &args_iter),
         .fetch => try fetchMain(allocator, &args_iter),
-        .list => try catMain(.data, list_name),
+        .list => try listMain(allocator),
         .database => try databaseMain(allocator),
         .complete => try listManipulateMain(allocator, &args_iter, .complete),
         .drop => try listManipulateMain(allocator, &args_iter, .dropped),
@@ -106,27 +106,57 @@ fn fetchMain(allocator: *mem.Allocator, args_iter: *clap.args.OsIterator) !void 
     try await update_image_cache_job;
 }
 
-fn catMain(folder: folders.KnownFolder, file_name: []const u8) !void {
-    var dir = try openFolder(folder, .{});
-    defer dir.close();
+fn listMain(allocator: *mem.Allocator) !void {
+    var cache_dir = try openFolder(.cache, .{});
+    defer cache_dir.close();
 
-    const file = try dir.openFile(file_name, .{});
-    defer file.close();
+    var data_dir = try openFolder(.data, .{});
+    defer data_dir.close();
 
-    try cat(file.reader(), io.getStdOut().writer());
+    var buf: [fs.MAX_PATH_BYTES]u8 = undefined;
+    const image_dir_path = try cache_dir.realpath(image_cache_name, &buf);
+
+    var list = blk: {
+        const data = try data_dir.readFileAlloc(allocator, list_name, math.maxInt(usize));
+        defer allocator.free(data);
+
+        break :blk try anime.List.fromDsv(allocator, data);
+    };
+    defer list.deinit(allocator);
+
+    const stdout = io.bufferedOutStream(io.getStdOut().writer()).writer();
+    for (list.entries.items) |entry| {
+        try entry.writeToDsv(stdout);
+        try stdout.print("\t{s}/{s}\n", .{
+            image_dir_path,
+            bufToBase64(hash(&entry.link)),
+        });
+    }
+    try stdout.context.flush();
 }
 
 fn databaseMain(allocator: *mem.Allocator) !void {
     var dir = try openFolder(.cache, .{});
     defer dir.close();
 
+    var buf: [fs.MAX_PATH_BYTES]u8 = undefined;
+    const image_dir_path = try dir.realpath(image_cache_name, &buf);
+
     const database_data = try dir.readFileAlloc(allocator, database_name, math.maxInt(usize));
     defer allocator.free(database_data);
 
     const stdout = io.bufferedOutStream(io.getStdOut().writer()).writer();
     for (mem.bytesAsSlice(anime.Info, database_data)) |info| {
-        try info.writeToDsv(stdout);
-        try stdout.writeAll("\n");
+        try stdout.print("{s}\t{}\t{s}\t{}\t{s}\t{s}\t{s}/{s}\n", .{
+            @tagName(info.type),
+            info.year,
+            @tagName(info.season),
+            info.episodes,
+            mem.spanZ(&info.title),
+            mem.spanZ(&info.link),
+            image_dir_path,
+            bufToBase64(hash(&info.link)),
+        });
     }
     try stdout.context.flush();
 }

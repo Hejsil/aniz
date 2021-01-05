@@ -113,15 +113,6 @@ pub const Info = packed struct {
     }
 
     pub fn writeToDsv(info: Info, writer: anytype) !void {
-        try writer.print("{s}\t{}\t{s}\t{}\t{s}\t{s}\t{s}", .{
-            @tagName(info.type),
-            info.year,
-            @tagName(info.season),
-            info.episodes,
-            mem.spanZ(&info.title),
-            mem.spanZ(&info.link),
-            mem.spanZ(&info.image),
-        });
     }
 };
 
