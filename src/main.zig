@@ -54,7 +54,9 @@ const Command = enum {
     list,
     plan_to_watch,
     put_on_hold,
+    remove,
     start_watching,
+    update,
 };
 
 pub fn main() !void {
@@ -69,15 +71,17 @@ pub fn main() !void {
     const command = std.meta.stringToEnum(Command, command_str) orelse .help;
 
     switch (command) {
-        .help, .@"--help" => try helpMain(allocator, &args_iter),
-        .fetch => try fetchMain(allocator, &args_iter),
-        .list => try listMain(allocator),
-        .database => try databaseMain(allocator),
         .complete => try listManipulateMain(allocator, &args_iter, .complete),
+        .database => try databaseMain(allocator),
         .drop => try listManipulateMain(allocator, &args_iter, .dropped),
+        .fetch => try fetchMain(allocator, &args_iter),
+        .help, .@"--help" => try helpMain(allocator, &args_iter),
+        .list => try listMain(allocator),
         .plan_to_watch => try listManipulateMain(allocator, &args_iter, .plan_to_watch),
         .put_on_hold => try listManipulateMain(allocator, &args_iter, .on_hold),
+        .remove => try listManipulateMain(allocator, &args_iter, .remove),
         .start_watching => try listManipulateMain(allocator, &args_iter, .watching),
+        .update => try listManipulateMain(allocator, &args_iter, .update),
     }
 }
 
@@ -100,7 +104,7 @@ fn fetchMain(allocator: *mem.Allocator, args_iter: *clap.args.OsIterator) !void 
     defer allocator.free(database);
 
     var database_writing_job = async writeDatabaseFile(dir, database);
-    var update_image_cache_job = async updateImageCache(dir, database);
+    var update_image_cache_job = async updateImageCache(allocator, dir, database);
 
     try await database_writing_job;
     try await update_image_cache_job;
@@ -153,18 +157,28 @@ fn databaseMain(allocator: *mem.Allocator) !void {
             @tagName(info.season),
             info.episodes,
             mem.spanZ(&info.title),
-            mem.spanZ(&info.link),
+            mem.spanZ(&info.links[0]),
             image_dir_path,
-            bufToBase64(hash(&info.link)),
+            bufToBase64(hash(&info.links[0])),
         });
     }
     try stdout.context.flush();
 }
 
+const Action = enum {
+    complete,
+    dropped,
+    on_hold,
+    plan_to_watch,
+    remove,
+    update,
+    watching,
+};
+
 fn listManipulateMain(
     allocator: *mem.Allocator,
     args_iter: *clap.args.OsIterator,
-    status: anime.Entry.Status,
+    action: Action,
 ) !void {
     var data_dir = try openFolder(.data, .{});
     defer data_dir.close();
@@ -189,7 +203,7 @@ fn listManipulateMain(
     defer allocator.free(database);
 
     while (try args_iter.next()) |anime_link|
-        try manipulateList(allocator, &list, database, anime_link, status);
+        try manipulateList(allocator, &list, database, anime_link, action);
 
     var file = try data_dir.atomicFile(list_name, .{});
     defer file.deinit();
@@ -205,11 +219,13 @@ fn manipulateList(
     list: *anime.List,
     database: []const anime.Info,
     link: []const u8,
-    status: anime.Entry.Status,
+    action: Action,
 ) !void {
-    const database_entry = for (database) |entry| {
-        if (mem.eql(u8, mem.spanZ(&entry.link), link))
-            break entry;
+    const database_entry = outer: for (database) |entry| {
+        for (entry.links) |entry_link| {
+            if (mem.eql(u8, mem.spanZ(&entry_link), link))
+                break :outer entry;
+        }
     } else {
         std.log.err("Anime '{}' was not found in the database", .{link});
         return error.NoSuchAnime;
@@ -222,13 +238,17 @@ fn manipulateList(
             .status = .plan_to_watch,
             .episodes = 0,
             .watched = 0,
-            .title = database_entry.title,
-            .link = database_entry.link,
+            .title = undefined,
+            .link = undefined,
         };
         break :blk entry;
     };
 
-    switch (status) {
+    // Always update the entry to have newest link id and title.
+    entry.link = database_entry.links[0];
+    entry.title = database_entry.title;
+
+    switch (action) {
         .complete => {
             if (entry.status != .complete)
                 entry.date = datetime.Date.now();
@@ -237,7 +257,16 @@ fn manipulateList(
             entry.watched += 1;
             entry.episodes = database_entry.episodes;
         },
-        .dropped, .on_hold, .plan_to_watch, .watching => entry.status = status,
+        .dropped => entry.status = .dropped,
+        .on_hold => entry.status = .on_hold,
+        .plan_to_watch => entry.status = .plan_to_watch,
+        .watching => entry.status = .watching,
+        .remove => {
+            const index = (@ptrToInt(entry) - @ptrToInt(list.entries.items.ptr)) /
+                @sizeOf(anime.Entry);
+            _ = list.entries.swapRemove(index);
+        },
+        .update => {},
     }
 }
 
@@ -264,9 +293,16 @@ fn openFolder(folder: folders.KnownFolder, flags: fs.Dir.OpenDirOptions) !fs.Dir
     return makeAndOpenDir(dir, program_name);
 }
 
-fn updateImageCache(dir: fs.Dir, database: []const anime.Info) !void {
+fn updateImageCache(allocator: *mem.Allocator, dir: fs.Dir, database: []const anime.Info) !void {
     var image_dir = try makeAndOpenDir(dir, image_cache_name);
     defer image_dir.close();
+
+    var result = std.ArrayList(u8).init(allocator);
+    defer result.deinit();
+
+    var progress = std.Progress{};
+    const root_node = try progress.start("", database.len);
+    defer root_node.end();
 
     // TODO: Have a channel, and push links into that channel. Have N
     //       jobs that pulls download tasks from the channel and downloads
@@ -278,18 +314,35 @@ fn updateImageCache(dir: fs.Dir, database: []const anime.Info) !void {
             defer file.close();
 
             // File didn't exist. Download it!
-            try curl(file.writer(), mem.spanZ(&entry.image));
+            result.resize(0) catch unreachable;
+            try curl(result.writer(), mem.spanZ(&entry.image));
+
+            // Some images might have moved. In that case the html will specify
+            // the new position.
+            const url_start = "<p>The document has moved <a href=\"";
+            while (mem.indexOf(u8, result.items, url_start)) |url_start_index| {
+                const start = url_start_index + url_start.len;
+                const end = mem.indexOfPos(u8, result.items, start, "\"") orelse break;
+                const link = try allocator.dupe(u8, result.items[start..end]);
+                defer allocator.free(link);
+
+                result.resize(0) catch unreachable;
+                try curl(result.writer(), link);
+            }
+
+            try file.writeAll(result.items);
         } else |err| switch (err) {
             error.PathAlreadyExists => {},
             else => |new_err| return new_err,
         }
 
-        const link_name = bufToBase64(hash(&entry.link));
+        const link_name = bufToBase64(hash(&entry.links[0]));
         image_dir.deleteFile(&link_name) catch {};
         image_dir.symLink(&image_name, &link_name, .{}) catch |err| switch (err) {
             error.PathAlreadyExists => {},
             else => |new_err| return new_err,
         };
+        root_node.completeOne();
     }
 }
 

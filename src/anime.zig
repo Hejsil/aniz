@@ -17,8 +17,8 @@ pub const Season = enum(u4) {
 };
 
 pub const Info = packed struct {
+    links: [6][255:0]u8,
     title: [255:0]u8,
-    link: [255:0]u8,
     image: [255:0]u8,
     year: u16,
     episodes: u16,
@@ -90,6 +90,16 @@ pub const Info = packed struct {
             return error.InvalidEntry;
 
         return Info{
+            .links = [6][255:0]u8{
+                sliceToZBuf(u8, 255, 0)(if (entry.sources.len > 0) entry.sources[0] else "") orelse return error.InvalidEntry,
+                sliceToZBuf(u8, 255, 0)(if (entry.sources.len > 1) entry.sources[1] else "") orelse return error.InvalidEntry,
+                sliceToZBuf(u8, 255, 0)(if (entry.sources.len > 2) entry.sources[2] else "") orelse return error.InvalidEntry,
+                sliceToZBuf(u8, 255, 0)(if (entry.sources.len > 3) entry.sources[3] else "") orelse return error.InvalidEntry,
+                sliceToZBuf(u8, 255, 0)(if (entry.sources.len > 4) entry.sources[4] else "") orelse return error.InvalidEntry,
+                sliceToZBuf(u8, 255, 0)(if (entry.sources.len > 5) entry.sources[5] else "") orelse return error.InvalidEntry,
+            },
+            .title = sliceToZBuf(u8, 255, 0)(entry.title) orelse return error.InvalidEntry,
+            .image = sliceToZBuf(u8, 255, 0)(entry.picture) orelse return error.InvalidEntry,
             .type = switch (entry.type) {
                 .TV => .tv,
                 .Movie => .movie,
@@ -106,14 +116,10 @@ pub const Info = packed struct {
                 .UNDEFINED => .undef,
             },
             .episodes = entry.episodes,
-            .title = sliceToZBuf(u8, 255, 0)(entry.title) orelse return error.InvalidEntry,
-            .link = sliceToZBuf(u8, 255, 0)(entry.sources[0]) orelse return error.InvalidEntry,
-            .image = sliceToZBuf(u8, 255, 0)(entry.picture) orelse return error.InvalidEntry,
         };
     }
 
-    pub fn writeToDsv(info: Info, writer: anytype) !void {
-    }
+    pub fn writeToDsv(info: Info, writer: anytype) !void {}
 };
 
 pub const List = struct {
