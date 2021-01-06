@@ -57,6 +57,7 @@ const Command = enum {
     remove,
     start_watching,
     update,
+    watch_episode,
 };
 
 pub fn main() !void {
@@ -82,6 +83,7 @@ pub fn main() !void {
         .remove => try listManipulateMain(allocator, &args_iter, .remove),
         .start_watching => try listManipulateMain(allocator, &args_iter, .watching),
         .update => try listManipulateMain(allocator, &args_iter, .update),
+        .watch_episode => try listManipulateMain(allocator, &args_iter, .watch_episode),
     }
 }
 
@@ -172,6 +174,7 @@ const Action = enum {
     plan_to_watch,
     remove,
     update,
+    watch_episode,
     watching,
 };
 
@@ -235,7 +238,7 @@ fn manipulateList(
         const entry = try list.entries.addOne(allocator);
         entry.* = .{
             .date = datetime.Date.now(),
-            .status = .plan_to_watch,
+            .status = .watching,
             .episodes = 0,
             .watched = 0,
             .title = undefined,
@@ -257,16 +260,32 @@ fn manipulateList(
             entry.watched += 1;
             entry.episodes = database_entry.episodes;
         },
-        .dropped => entry.status = .dropped,
-        .on_hold => entry.status = .on_hold,
-        .plan_to_watch => entry.status = .plan_to_watch,
-        .watching => entry.status = .watching,
+        .dropped => {
+            entry.watched = 0;
+            entry.status = .dropped;
+        },
+        .on_hold => {
+            entry.watched = 0;
+            entry.status = .on_hold;
+        },
+        .plan_to_watch => {
+            entry.watched = 0;
+            entry.status = .plan_to_watch;
+        },
+        .watching => {
+            entry.watched = 0;
+            entry.status = .watching;
+        },
+        .watch_episode => entry.episodes = math.min(database_entry.episodes, entry.episodes + 1),
         .remove => {
             const index = (@ptrToInt(entry) - @ptrToInt(list.entries.items.ptr)) /
                 @sizeOf(anime.Entry);
             _ = list.entries.swapRemove(index);
         },
-        .update => {},
+        .update => switch (entry.status) {
+            .complete => entry.episodes = database_entry.episodes,
+            .dropped, .on_hold, .plan_to_watch, .watching => entry.watched = 0,
+        },
     }
 }
 
