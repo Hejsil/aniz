@@ -261,18 +261,30 @@ fn manipulateList(
             entry.episodes = database_entry.episodes;
         },
         .dropped => {
+            if (entry.status != .dropped)
+                entry.date = datetime.Date.now();
+
             entry.watched = 0;
             entry.status = .dropped;
         },
         .on_hold => {
+            if (entry.status != .on_hold)
+                entry.date = datetime.Date.now();
+
             entry.watched = 0;
             entry.status = .on_hold;
         },
         .plan_to_watch => {
+            if (entry.status != .plan_to_watch)
+                entry.date = datetime.Date.now();
+
             entry.watched = 0;
             entry.status = .plan_to_watch;
         },
         .watching => {
+            if (entry.status != .watching)
+                entry.date = datetime.Date.now();
+
             entry.watched = 0;
             entry.status = .watching;
         },

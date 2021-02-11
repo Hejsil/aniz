@@ -4,8 +4,9 @@ const pkgs = @import("deps.zig").pkgs;
 const Builder = std.build.Builder;
 
 pub fn build(b: *Builder) void {
-    const target = b.standardTargetOptions(.{});
+    b.setPreferredReleaseMode(.ReleaseSafe);
     const mode = b.standardReleaseOptions();
+    const target = b.standardTargetOptions(.{});
 
     const exe = b.addExecutable("anilist", "src/main.zig");
     exe.setTarget(target);
