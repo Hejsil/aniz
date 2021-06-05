@@ -89,17 +89,18 @@ pub const Info = packed struct {
         if (entry.sources.len == 0)
             return error.InvalidEntry;
 
+        const toBuf = sliceToZBuf(u8, 255, 0);
         return Info{
             .links = [6][255:0]u8{
-                sliceToZBuf(u8, 255, 0)(if (entry.sources.len > 0) entry.sources[0] else "") orelse return error.InvalidEntry,
-                sliceToZBuf(u8, 255, 0)(if (entry.sources.len > 1) entry.sources[1] else "") orelse return error.InvalidEntry,
-                sliceToZBuf(u8, 255, 0)(if (entry.sources.len > 2) entry.sources[2] else "") orelse return error.InvalidEntry,
-                sliceToZBuf(u8, 255, 0)(if (entry.sources.len > 3) entry.sources[3] else "") orelse return error.InvalidEntry,
-                sliceToZBuf(u8, 255, 0)(if (entry.sources.len > 4) entry.sources[4] else "") orelse return error.InvalidEntry,
-                sliceToZBuf(u8, 255, 0)(if (entry.sources.len > 5) entry.sources[5] else "") orelse return error.InvalidEntry,
+                toBuf(&fba.allocator, if (entry.sources.len > 0) entry.sources[0] else "") catch return error.InvalidEntry,
+                toBuf(&fba.allocator, if (entry.sources.len > 1) entry.sources[1] else "") catch return error.InvalidEntry,
+                toBuf(&fba.allocator, if (entry.sources.len > 2) entry.sources[2] else "") catch return error.InvalidEntry,
+                toBuf(&fba.allocator, if (entry.sources.len > 3) entry.sources[3] else "") catch return error.InvalidEntry,
+                toBuf(&fba.allocator, if (entry.sources.len > 4) entry.sources[4] else "") catch return error.InvalidEntry,
+                toBuf(&fba.allocator, if (entry.sources.len > 5) entry.sources[5] else "") catch return error.InvalidEntry,
             },
-            .title = sliceToZBuf(u8, 255, 0)(entry.title) orelse return error.InvalidEntry,
-            .image = sliceToZBuf(u8, 255, 0)(entry.picture) orelse return error.InvalidEntry,
+            .title = toBuf(&fba.allocator, entry.title) catch return error.InvalidEntry,
+            .image = toBuf(&fba.allocator, entry.picture) catch return error.InvalidEntry,
             .type = switch (entry.type) {
                 .TV => .tv,
                 .Movie => .movie,
@@ -191,14 +192,14 @@ pub const Entry = struct {
         plan_to_watch,
         watching,
 
-        pub fn fromString(str: []const u8) ?Status {
+        pub fn fromString(_: *mem.Allocator, str: []const u8) !Status {
             return std.ComptimeStringMap(Status, .{
                 .{ "c", .complete },
                 .{ "d", .dropped },
                 .{ "o", .on_hold },
                 .{ "p", .plan_to_watch },
                 .{ "w", .watching },
-            }).get(str);
+            }).get(str) orelse return error.ParserFailed;
         }
 
         pub fn toString(s: Status) []const u8 {
@@ -247,7 +248,8 @@ pub const Entry = struct {
     }
 
     pub fn fromDsv(row: []const u8) !Entry {
-        return (dsv(row) orelse return error.InvalidEntry).value;
+        var fba = heap.FixedBufferAllocator.init("");
+        return (dsv(&fba.allocator, row) catch return error.InvalidEntry).value;
     }
 
     pub fn writeToDsv(entry: Entry, writer: anytype) !void {
@@ -268,9 +270,9 @@ pub const Entry = struct {
         mecha.ascii.char('\t'),
         status,
         mecha.ascii.char('\t'),
-        mecha.int(usize, 10),
+        mecha.int(usize, .{ .parse_sign = false }),
         mecha.ascii.char('\t'),
-        mecha.int(usize, 10),
+        mecha.int(usize, .{ .parse_sign = false }),
         mecha.ascii.char('\t'),
         string,
         mecha.ascii.char('\t'),
@@ -279,21 +281,21 @@ pub const Entry = struct {
     }));
 
     const date = mecha.map(datetime.Date, mecha.toStruct(datetime.Date), mecha.combine(.{
-        mecha.int(u16, 10),
+        mecha.int(u16, .{ .parse_sign = false }),
         mecha.ascii.char('-'),
-        mecha.int(u4, 10),
+        mecha.int(u4, .{ .parse_sign = false }),
         mecha.ascii.char('-'),
-        mecha.int(u8, 10),
+        mecha.int(u8, .{ .parse_sign = false }),
     }));
 
     const status = mecha.convert(Status, Status.fromString, any);
 
     const string = mecha.convert([255:0]u8, sliceToZBuf(u8, 255, 0), any);
 
-    const any = mecha.many(mecha.ascii.not(mecha.ascii.char('\t')));
+    const any = mecha.many(mecha.ascii.not(mecha.ascii.char('\t')), .{ .collect = false });
 };
 
-fn expectJsonToken(stream: *json.TokenStream, id: @TagType(json.Token)) !void {
+fn expectJsonToken(stream: *json.TokenStream, id: std.meta.TagType(json.Token)) !void {
     const token = (try stream.next()) orelse return error.UnexpectEndOfStream;
     if (token != id)
         return error.UnexpectJsonToken;
@@ -312,11 +314,15 @@ fn expectJsonString(stream: *json.TokenStream, string: []const u8) !void {
         return error.UnexpectJsonString;
 }
 
-fn sliceToZBuf(comptime T: type, comptime len: usize, comptime sentinel: T) fn ([]const T) ?[len:sentinel]T {
+fn sliceToZBuf(
+    comptime T: type,
+    comptime len: usize,
+    comptime sentinel: T,
+) fn (*mem.Allocator, []const T) mecha.Error![len:sentinel]T {
     return struct {
-        fn func(slice: []const T) ?[len:sentinel]T {
+        fn func(_: *mem.Allocator, slice: []const T) mecha.Error![len:sentinel]T {
             if (slice.len > len)
-                return null;
+                return error.ParserFailed;
 
             var res: [len:sentinel]T = [_:sentinel]T{sentinel} ** len;
             mem.copy(T, &res, slice);

@@ -13,8 +13,8 @@ const json = std.json;
 const math = std.math;
 const mem = std.mem;
 
-const database_url = "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/anime-offline-database.json";
 const database_name = "database";
+const database_url = "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/anime-offline-database.json";
 const image_cache_name = "images";
 const list_name = "list";
 const program_name = "anilist";
@@ -130,7 +130,7 @@ fn listMain(allocator: *mem.Allocator) !void {
     };
     defer list.deinit(allocator);
 
-    const stdout = io.bufferedOutStream(io.getStdOut().writer()).writer();
+    const stdout = io.bufferedWriter(io.getStdOut().writer()).writer();
     for (list.entries.items) |entry| {
         try entry.writeToDsv(stdout);
         try stdout.print("\t{s}/{s}\n", .{
@@ -151,7 +151,7 @@ fn databaseMain(allocator: *mem.Allocator) !void {
     const database_data = try dir.readFileAlloc(allocator, database_name, math.maxInt(usize));
     defer allocator.free(database_data);
 
-    const stdout = io.bufferedOutStream(io.getStdOut().writer()).writer();
+    const stdout = io.bufferedWriter(io.getStdOut().writer()).writer();
     for (mem.bytesAsSlice(anime.Info, database_data)) |info| {
         try stdout.print("{s}\t{}\t{s}\t{}\t{s}\t{s}\t{s}/{s}\n", .{
             @tagName(info.type),
@@ -230,7 +230,7 @@ fn manipulateList(
                 break :outer entry;
         }
     } else {
-        std.log.err("Anime '{}' was not found in the database", .{link});
+        std.log.err("Anime '{s}' was not found in the database", .{link});
         return error.NoSuchAnime;
     };
 
@@ -383,9 +383,9 @@ fn hash(src: []const u8) [24]u8 {
     return out;
 }
 
-fn bufToBase64(buf: anytype) [base64.Base64Encoder.calcSize(buf.len)]u8 {
-    var res: [base64.Base64Encoder.calcSize(buf.len)]u8 = undefined;
-    fs.base64_encoder.encode(&res, &buf);
+fn bufToBase64(buf: anytype) [fs.base64_encoder.calcSize(buf.len)]u8 {
+    var res: [fs.base64_encoder.calcSize(buf.len)]u8 = undefined;
+    _ = fs.base64_encoder.encode(&res, &buf);
     return res;
 }
 
