@@ -12,6 +12,7 @@ const io = std.io;
 const json = std.json;
 const math = std.math;
 const mem = std.mem;
+const meta = std.meta;
 
 const database_name = "database";
 const database_url = "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/anime-offline-database.json";
@@ -23,7 +24,7 @@ const program_name = "anilist";
 //       and a proper event loop in std. When that happens I'll look
 //       into downloading/writing things in parallel.
 
-const params = comptime blk: {
+const params = blk: {
     @setEvalBranchQuota(100000);
     break :blk [_]clap.Param(clap.Help){
         clap.parseParam("-h, --help           Print this message to stdout") catch unreachable,
@@ -99,11 +100,11 @@ fn fetchMain(allocator: *mem.Allocator, args_iter: *clap.args.OsIterator) !void 
     defer allocator.free(database_json);
 
     // Validate the json
-    const database = try anime.Info.fromJsonList(
+    var database = try anime.Info.fromJsonList(
         &json.TokenStream.init(database_json),
         allocator,
     );
-    defer allocator.free(database);
+    defer database.deinit(allocator);
 
     var database_writing_job = async writeDatabaseFile(dir, database);
     var update_image_cache_job = async updateImageCache(allocator, dir, database);
@@ -148,20 +149,20 @@ fn databaseMain(allocator: *mem.Allocator) !void {
     var buf: [fs.MAX_PATH_BYTES]u8 = undefined;
     const image_dir_path = try dir.realpath(image_cache_name, &buf);
 
-    const database_data = try dir.readFileAlloc(allocator, database_name, math.maxInt(usize));
-    defer allocator.free(database_data);
+    var database = try readDatabaseFile(dir, allocator);
+    defer database.deinit(allocator);
 
     const stdout = io.bufferedWriter(io.getStdOut().writer()).writer();
-    for (mem.bytesAsSlice(anime.Info, database_data)) |info| {
+    for (database.items(.type)) |_type, i| {
         try stdout.print("{s}\t{}\t{s}\t{}\t{s}\t{s}\t{s}/{s}\n", .{
-            @tagName(info.type),
-            info.year,
-            @tagName(info.season),
-            info.episodes,
-            mem.spanZ(&info.title),
-            mem.spanZ(&info.links[0]),
+            @tagName(_type),
+            database.items(.year)[i],
+            @tagName(database.items(.season)[i]),
+            database.items(.episodes)[i],
+            mem.spanZ(&database.items(.title)[i]),
+            mem.spanZ(&database.items(.links)[i][0]),
             image_dir_path,
-            bufToBase64(hash(&info.links[0])),
+            bufToBase64(hash(&database.items(.links)[i][0])),
         });
     }
     try stdout.context.flush();
@@ -194,16 +195,13 @@ fn listManipulateMain(
     };
     defer list.deinit(allocator);
 
-    const database = blk: {
+    var database = blk: {
         var cache_dir = try openFolder(.cache, .{});
         defer cache_dir.close();
 
-        const database = try cache_dir.readFileAlloc(allocator, database_name, math.maxInt(usize));
-        errdefer allocator.free(database);
-
-        break :blk mem.bytesAsSlice(anime.Info, database);
+        break :blk try readDatabaseFile(cache_dir, allocator);
     };
-    defer allocator.free(database);
+    defer database.deinit(allocator);
 
     while (try args_iter.next()) |anime_link|
         try manipulateList(allocator, &list, database, anime_link, action);
@@ -220,14 +218,14 @@ fn listManipulateMain(
 fn manipulateList(
     allocator: *mem.Allocator,
     list: *anime.List,
-    database: []const anime.Info,
+    database: std.MultiArrayList(anime.Info),
     link: []const u8,
     action: Action,
 ) !void {
-    const database_entry = outer: for (database) |entry| {
-        for (entry.links) |entry_link| {
-            if (mem.eql(u8, mem.spanZ(&entry_link), link))
-                break :outer entry;
+    const i = outer: for (database.items(.links)) |*links, i| {
+        for (links) |*entry_link| {
+            if (mem.startsWith(u8, entry_link, link) and entry_link[link.len] == 0)
+                break :outer i;
         }
     } else {
         std.log.err("Anime '{s}' was not found in the database", .{link});
@@ -248,8 +246,8 @@ fn manipulateList(
     };
 
     // Always update the entry to have newest link id and title.
-    entry.link = database_entry.links[0];
-    entry.title = database_entry.title;
+    entry.link = database.items(.links)[i][0];
+    entry.title = database.items(.title)[i];
 
     switch (action) {
         .complete => {
@@ -258,7 +256,7 @@ fn manipulateList(
 
             entry.status = .complete;
             entry.watched += 1;
-            entry.episodes = database_entry.episodes;
+            entry.episodes = database.items(.episodes)[i];
         },
         .dropped => {
             if (entry.status != .dropped)
@@ -288,14 +286,14 @@ fn manipulateList(
             entry.watched = 0;
             entry.status = .watching;
         },
-        .watch_episode => entry.episodes = math.min(database_entry.episodes, entry.episodes + 1),
+        .watch_episode => entry.episodes = math.min(database.items(.episodes)[i], entry.episodes + 1),
         .remove => {
             const index = (@ptrToInt(entry) - @ptrToInt(list.entries.items.ptr)) /
                 @sizeOf(anime.Entry);
             _ = list.entries.swapRemove(index);
         },
         .update => switch (entry.status) {
-            .complete => entry.episodes = database_entry.episodes,
+            .complete => entry.episodes = database.items(.episodes)[i],
             .dropped, .on_hold, .plan_to_watch, .watching => entry.watched = 0,
         },
     }
@@ -324,7 +322,7 @@ fn openFolder(folder: folders.KnownFolder, flags: fs.Dir.OpenDirOptions) !fs.Dir
     return makeAndOpenDir(dir, program_name);
 }
 
-fn updateImageCache(allocator: *mem.Allocator, dir: fs.Dir, database: []const anime.Info) !void {
+fn updateImageCache(allocator: *mem.Allocator, dir: fs.Dir, database: std.MultiArrayList(anime.Info)) !void {
     var image_dir = try makeAndOpenDir(dir, image_cache_name);
     defer image_dir.close();
 
@@ -338,15 +336,15 @@ fn updateImageCache(allocator: *mem.Allocator, dir: fs.Dir, database: []const an
     // TODO: Have a channel, and push links into that channel. Have N
     //       jobs that pulls download tasks from the channel and downloads
     //       in parallel.
-    for (database) |entry| {
-        const image_name = bufToBase64(hash(&entry.image));
+    for (database.items(.image)) |*image, i| {
+        const image_name = bufToBase64(hash(image));
         if (image_dir.createFile(&image_name, .{ .exclusive = true })) |file| {
             errdefer image_dir.deleteFile(&image_name) catch {};
             defer file.close();
 
             // File didn't exist. Download it!
             result.resize(0) catch unreachable;
-            try curl(result.writer(), mem.spanZ(&entry.image));
+            try curl(result.writer(), mem.spanZ(image));
 
             // Some images might have moved. In that case the html will specify
             // the new position.
@@ -367,7 +365,8 @@ fn updateImageCache(allocator: *mem.Allocator, dir: fs.Dir, database: []const an
             else => |new_err| return new_err,
         }
 
-        const link_name = bufToBase64(hash(&entry.links[0]));
+        const link = &database.items(.links)[i][0];
+        const link_name = bufToBase64(hash(link));
         image_dir.deleteFile(&link_name) catch {};
         image_dir.symLink(&image_name, &link_name, .{}) catch |err| switch (err) {
             error.PathAlreadyExists => {},
@@ -397,12 +396,42 @@ fn makeAndOpenDir(dir: fs.Dir, sub_path: []const u8) !fs.Dir {
     return dir.openDir(sub_path, .{});
 }
 
-fn writeDatabaseFile(dir: fs.Dir, database: []const anime.Info) !void {
+fn writeDatabaseFile(dir: fs.Dir, database: std.MultiArrayList(anime.Info)) !void {
     var file = try dir.atomicFile(database_name, .{});
     defer file.deinit();
 
-    try file.file.writeAll(mem.sliceAsBytes(database));
+    const Enum = meta.FieldEnum(anime.Info);
+    inline for (@typeInfo(anime.Info).Struct.fields) |field| {
+        const field_enum = comptime meta.stringToEnum(Enum, field.name).?;
+        try file.file.writeAll(mem.sliceAsBytes(database.items(field_enum)));
+    }
     try file.finish();
+}
+
+fn readDatabaseFile(dir: fs.Dir, allocator: *mem.Allocator) !std.MultiArrayList(anime.Info) {
+    const info_size = comptime blk: {
+        var res: usize = 0;
+        for (@typeInfo(anime.Info).Struct.fields) |field|
+            res += @sizeOf(field.field_type);
+        break :blk res;
+    };
+
+    var res = std.MultiArrayList(anime.Info){};
+    errdefer res.deinit(allocator);
+    const file = try dir.openFile(database_name, .{});
+    defer file.close();
+
+    const stat = try file.stat();
+    const count = @intCast(usize, stat.size / info_size);
+    try res.resize(allocator, count);
+
+    const Enum = meta.FieldEnum(anime.Info);
+    inline for (@typeInfo(anime.Info).Struct.fields) |field| {
+        const field_enum = comptime meta.stringToEnum(Enum, field.name).?;
+        try file.reader().readNoEof(mem.sliceAsBytes(res.items(field_enum)));
+    }
+
+    return res;
 }
 
 fn curlAlloc(allocator: *mem.Allocator, link: []const u8) ![]u8 {

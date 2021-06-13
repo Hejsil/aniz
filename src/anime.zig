@@ -16,10 +16,13 @@ pub const Season = enum(u4) {
     undef,
 };
 
-pub const Info = packed struct {
-    links: [6][255:0]u8,
-    title: [255:0]u8,
-    image: [255:0]u8,
+const link_size = 159;
+const str_size = 179;
+
+pub const Info = struct {
+    links: [6][link_size:0]u8,
+    title: [str_size:0]u8,
+    image: [str_size:0]u8,
     year: u16,
     episodes: u16,
     type: Type,
@@ -33,13 +36,13 @@ pub const Info = packed struct {
         special,
     };
 
-    pub fn fromJsonList(stream: *json.TokenStream, allocator: *mem.Allocator) ![]Info {
+    pub fn fromJsonList(stream: *json.TokenStream, allocator: *mem.Allocator) !std.MultiArrayList(Info) {
         try expectJsonToken(stream, .ObjectBegin);
         try expectJsonString(stream, "data");
         try expectJsonToken(stream, .ArrayBegin);
 
-        var res = std.ArrayList(Info).init(allocator);
-        errdefer res.deinit();
+        var res = std.MultiArrayList(Info){};
+        errdefer res.deinit(allocator);
 
         while (true) {
             const token = (try stream.next()) orelse return error.UnexpectEndOfStream;
@@ -53,11 +56,11 @@ pub const Info = packed struct {
             //       fun when you wonna do custom deserialization.
             debug.assert(stream.token == null);
             stream.token = token;
-            try res.append(try fromJson(stream));
+            try res.append(allocator, try fromJson(stream));
         }
 
         try expectJsonToken(stream, .ObjectEnd);
-        return res.toOwnedSlice();
+        return res;
     }
 
     pub fn fromJson(stream: *json.TokenStream) !Info {
@@ -83,21 +86,22 @@ pub const Info = packed struct {
                 tags: []const []const u8,
             },
             stream,
-            .{ .allocator = &fba.allocator },
+            .{ .allocator = &fba.allocator, .allow_trailing_data = true },
         );
 
         if (entry.sources.len == 0)
             return error.InvalidEntry;
 
-        const toBuf = sliceToZBuf(u8, 255, 0);
+        const toBuf = sliceToZBuf(u8, str_size, 0);
+        const toBufLink = sliceToZBuf(u8, link_size, 0);
         return Info{
-            .links = [6][255:0]u8{
-                toBuf(&fba.allocator, if (entry.sources.len > 0) entry.sources[0] else "") catch return error.InvalidEntry,
-                toBuf(&fba.allocator, if (entry.sources.len > 1) entry.sources[1] else "") catch return error.InvalidEntry,
-                toBuf(&fba.allocator, if (entry.sources.len > 2) entry.sources[2] else "") catch return error.InvalidEntry,
-                toBuf(&fba.allocator, if (entry.sources.len > 3) entry.sources[3] else "") catch return error.InvalidEntry,
-                toBuf(&fba.allocator, if (entry.sources.len > 4) entry.sources[4] else "") catch return error.InvalidEntry,
-                toBuf(&fba.allocator, if (entry.sources.len > 5) entry.sources[5] else "") catch return error.InvalidEntry,
+            .links = [6][link_size:0]u8{
+                toBufLink(&fba.allocator, if (entry.sources.len > 0) entry.sources[0] else "") catch return error.InvalidEntry,
+                toBufLink(&fba.allocator, if (entry.sources.len > 1) entry.sources[1] else "") catch return error.InvalidEntry,
+                toBufLink(&fba.allocator, if (entry.sources.len > 2) entry.sources[2] else "") catch return error.InvalidEntry,
+                toBufLink(&fba.allocator, if (entry.sources.len > 3) entry.sources[3] else "") catch return error.InvalidEntry,
+                toBufLink(&fba.allocator, if (entry.sources.len > 4) entry.sources[4] else "") catch return error.InvalidEntry,
+                toBufLink(&fba.allocator, if (entry.sources.len > 5) entry.sources[5] else "") catch return error.InvalidEntry,
             },
             .title = toBuf(&fba.allocator, entry.title) catch return error.InvalidEntry,
             .image = toBuf(&fba.allocator, entry.picture) catch return error.InvalidEntry,
@@ -119,8 +123,6 @@ pub const Info = packed struct {
             .episodes = entry.episodes,
         };
     }
-
-    pub fn writeToDsv(info: Info, writer: anytype) !void {}
 };
 
 pub const List = struct {
@@ -152,7 +154,7 @@ pub const List = struct {
     pub fn findWithLink(list: List, link: []const u8) ?*Entry {
         return list.find(link, struct {
             fn match(l: []const u8, entry: Entry) bool {
-                return mem.eql(u8, l, mem.spanZ(&entry.link));
+                return mem.startsWith(u8, &entry.link, l) and entry.link[l.len] == 0;
             }
         }.match);
     }
@@ -182,8 +184,8 @@ pub const Entry = struct {
     status: Status,
     episodes: usize,
     watched: usize,
-    title: [255:0]u8,
-    link: [255:0]u8,
+    title: [str_size:0]u8,
+    link: [link_size:0]u8,
 
     pub const Status = enum {
         complete,
@@ -276,7 +278,7 @@ pub const Entry = struct {
         mecha.ascii.char('\t'),
         string,
         mecha.ascii.char('\t'),
-        string,
+        link,
         mecha.eos,
     }));
 
@@ -290,7 +292,8 @@ pub const Entry = struct {
 
     const status = mecha.convert(Status, Status.fromString, any);
 
-    const string = mecha.convert([255:0]u8, sliceToZBuf(u8, 255, 0), any);
+    const string = mecha.convert([str_size:0]u8, sliceToZBuf(u8, str_size, 0), any);
+    const link = mecha.convert([link_size:0]u8, sliceToZBuf(u8, link_size, 0), any);
 
     const any = mecha.many(mecha.ascii.not(mecha.ascii.char('\t')), .{ .collect = false });
 };
