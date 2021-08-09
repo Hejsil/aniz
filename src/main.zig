@@ -286,7 +286,10 @@ fn manipulateList(
             entry.watched = 0;
             entry.status = .watching;
         },
-        .watch_episode => entry.episodes = math.min(database.items(.episodes)[i], entry.episodes + 1),
+        .watch_episode => entry.episodes = math.min(
+            database.items(.episodes)[i],
+            entry.episodes + 1,
+        ),
         .remove => {
             const index = (@ptrToInt(entry) - @ptrToInt(list.entries.items.ptr)) /
                 @sizeOf(anime.Entry);

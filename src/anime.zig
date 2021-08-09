@@ -20,7 +20,7 @@ const link_size = 159;
 const str_size = 179;
 
 pub const Info = struct {
-    links: [6][link_size:0]u8,
+    links: [8][link_size:0]u8,
     title: [str_size:0]u8,
     image: [str_size:0]u8,
     year: u16,
@@ -34,6 +34,7 @@ pub const Info = struct {
         ova,
         ona,
         special,
+        unknown,
     };
 
     pub fn fromJsonList(stream: *json.TokenStream, allocator: *mem.Allocator) !std.MultiArrayList(Info) {
@@ -72,9 +73,9 @@ pub const Info = struct {
             struct {
                 sources: []const []const u8,
                 title: []const u8,
-                type: enum { TV, Movie, OVA, ONA, Special },
+                type: enum { TV, MOVIE, OVA, ONA, SPECIAL, UNKNOWN },
                 episodes: u16,
-                status: enum { FINISHED, CURRENTLY, UPCOMING, UNKNOWN },
+                status: []const u8,
                 animeSeason: struct {
                     season: enum { SPRING, SUMMER, FALL, WINTER, UNDEFINED },
                     year: ?u16,
@@ -95,22 +96,25 @@ pub const Info = struct {
         const toBuf = sliceToZBuf(u8, str_size, 0);
         const toBufLink = sliceToZBuf(u8, link_size, 0);
         return Info{
-            .links = [6][link_size:0]u8{
+            .links = .{
                 toBufLink(&fba.allocator, if (entry.sources.len > 0) entry.sources[0] else "") catch return error.InvalidEntry,
                 toBufLink(&fba.allocator, if (entry.sources.len > 1) entry.sources[1] else "") catch return error.InvalidEntry,
                 toBufLink(&fba.allocator, if (entry.sources.len > 2) entry.sources[2] else "") catch return error.InvalidEntry,
                 toBufLink(&fba.allocator, if (entry.sources.len > 3) entry.sources[3] else "") catch return error.InvalidEntry,
                 toBufLink(&fba.allocator, if (entry.sources.len > 4) entry.sources[4] else "") catch return error.InvalidEntry,
                 toBufLink(&fba.allocator, if (entry.sources.len > 5) entry.sources[5] else "") catch return error.InvalidEntry,
+                toBufLink(&fba.allocator, if (entry.sources.len > 6) entry.sources[6] else "") catch return error.InvalidEntry,
+                toBufLink(&fba.allocator, if (entry.sources.len > 7) entry.sources[7] else "") catch return error.InvalidEntry,
             },
             .title = toBuf(&fba.allocator, entry.title) catch return error.InvalidEntry,
             .image = toBuf(&fba.allocator, entry.picture) catch return error.InvalidEntry,
             .type = switch (entry.type) {
                 .TV => .tv,
-                .Movie => .movie,
+                .MOVIE => .movie,
                 .OVA => .ova,
                 .ONA => .ona,
-                .Special => .special,
+                .SPECIAL => .special,
+                .UNKNOWN => .unknown,
             },
             .year = entry.animeSeason.year orelse 0,
             .season = switch (entry.animeSeason.season) {
