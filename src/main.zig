@@ -61,7 +61,7 @@ const Command = enum {
     watch_episode,
 };
 
-pub fn main() !void {
+pub fn main() !u8 {
     var gba = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = &gba.allocator;
     defer _ = gba.deinit();
@@ -72,27 +72,30 @@ pub fn main() !void {
     const command_str = (try args_iter.next()) orelse "help";
     const command = std.meta.stringToEnum(Command, command_str) orelse .help;
 
-    switch (command) {
-        .complete => try listManipulateMain(allocator, &args_iter, .complete),
-        .database => try databaseMain(allocator),
-        .drop => try listManipulateMain(allocator, &args_iter, .dropped),
-        .fetch => try fetchMain(allocator, &args_iter),
+    return switch (command) {
         .help, .@"--help" => try helpMain(allocator, &args_iter),
+
+        .database => try databaseMain(allocator),
+        .fetch => try fetchMain(allocator, &args_iter),
         .list => try listMain(allocator),
+
+        .complete => try listManipulateMain(allocator, &args_iter, .complete),
+        .drop => try listManipulateMain(allocator, &args_iter, .dropped),
         .plan_to_watch => try listManipulateMain(allocator, &args_iter, .plan_to_watch),
         .put_on_hold => try listManipulateMain(allocator, &args_iter, .on_hold),
         .remove => try listManipulateMain(allocator, &args_iter, .remove),
         .start_watching => try listManipulateMain(allocator, &args_iter, .watching),
         .update => try listManipulateMain(allocator, &args_iter, .update),
         .watch_episode => try listManipulateMain(allocator, &args_iter, .watch_episode),
-    }
+    };
 }
 
-fn helpMain(allocator: *mem.Allocator, args_iter: *clap.args.OsIterator) !void {
-    unreachable; // TODO
+fn helpMain(allocator: *mem.Allocator, args_iter: *clap.args.OsIterator) !u8 {
+    // TODO
+    return 0;
 }
 
-fn fetchMain(allocator: *mem.Allocator, args_iter: *clap.args.OsIterator) !void {
+fn fetchMain(allocator: *mem.Allocator, args_iter: *clap.args.OsIterator) !u8 {
     var dir = try openFolder(.cache, .{});
     defer dir.close();
 
@@ -111,9 +114,10 @@ fn fetchMain(allocator: *mem.Allocator, args_iter: *clap.args.OsIterator) !void 
 
     try await database_writing_job;
     try await update_image_cache_job;
+    return 0;
 }
 
-fn listMain(allocator: *mem.Allocator) !void {
+fn listMain(allocator: *mem.Allocator) !u8 {
     var cache_dir = try openFolder(.cache, .{});
     defer cache_dir.close();
 
@@ -124,7 +128,14 @@ fn listMain(allocator: *mem.Allocator) !void {
     const image_dir_path = try cache_dir.realpath(image_cache_name, &buf);
 
     var list = blk: {
-        const data = try data_dir.readFileAlloc(allocator, list_name, math.maxInt(usize));
+        const data = data_dir.readFileAlloc(
+            allocator,
+            list_name,
+            math.maxInt(usize),
+        ) catch |err| switch (err) {
+            error.FileNotFound => "",
+            else => |e| return e,
+        };
         defer allocator.free(data);
 
         break :blk try anime.List.fromDsv(allocator, data);
@@ -140,16 +151,21 @@ fn listMain(allocator: *mem.Allocator) !void {
         });
     }
     try stdout.context.flush();
+    return 0;
 }
 
-fn databaseMain(allocator: *mem.Allocator) !void {
+fn databaseMain(allocator: *mem.Allocator) !u8 {
     var dir = try openFolder(.cache, .{});
     defer dir.close();
 
     var buf: [fs.MAX_PATH_BYTES]u8 = undefined;
     const image_dir_path = try dir.realpath(image_cache_name, &buf);
 
-    var database = try readDatabaseFile(dir, allocator);
+    var database = readDatabaseFile(dir, allocator) catch |err| {
+        std.log.err("Could not read database file: {s}", .{@errorName(err)});
+        std.log.err("Try running 'anilist fetch' to download a new database", .{});
+        return 1;
+    };
     defer database.deinit(allocator);
 
     const stdout = io.bufferedWriter(io.getStdOut().writer()).writer();
@@ -166,6 +182,7 @@ fn databaseMain(allocator: *mem.Allocator) !void {
         });
     }
     try stdout.context.flush();
+    return 0;
 }
 
 const Action = enum {
@@ -183,12 +200,19 @@ fn listManipulateMain(
     allocator: *mem.Allocator,
     args_iter: *clap.args.OsIterator,
     action: Action,
-) !void {
+) !u8 {
     var data_dir = try openFolder(.data, .{});
     defer data_dir.close();
 
     var list = blk: {
-        const data = try data_dir.readFileAlloc(allocator, list_name, math.maxInt(usize));
+        const data = data_dir.readFileAlloc(
+            allocator,
+            list_name,
+            math.maxInt(usize),
+        ) catch |err| switch (err) {
+            error.FileNotFound => "",
+            else => |e| return e,
+        };
         defer allocator.free(data);
 
         break :blk try anime.List.fromDsv(allocator, data);
@@ -213,6 +237,7 @@ fn listManipulateMain(
     try list.writeToDsv(writer);
     try writer.context.flush();
     try file.finish();
+    return 0;
 }
 
 fn manipulateList(
