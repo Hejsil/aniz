@@ -16,11 +16,54 @@ pub const Season = enum(u4) {
     undef,
 };
 
+pub const Site = enum {
+    anidb,
+    anilist,
+    anisearch,
+    kitsu,
+    livechart,
+    myanimelist,
+
+    pub fn url(site: Site) []const u8 {
+        return switch (site) {
+            .anidb => "https://anidb.net/anime/",
+            .anilist => "https://anilist.co/anime/",
+            .anisearch => "https://anisearch.com/anime/",
+            .kitsu => "https://kitsu.io/anime/",
+            .livechart => "https://livechart.me/anime/",
+            .myanimelist => "https://myanimelist.net/anime/",
+        };
+    }
+};
+
+pub const Id = struct {
+    site: Site,
+    id: u32,
+
+    pub fn fromUrl(url: []const u8) !Id {
+        inline for (@typeInfo(Site).Enum.fields) |field| {
+            const site = @field(Site, field.name);
+            const site_url = site.url();
+            if (mem.startsWith(u8, url, site_url)) {
+                const id = try std.fmt.parseUnsigned(u32, url[site_url.len..], 10);
+                return Id{ .site = site, .id = id };
+            }
+        }
+
+        return error.InvalidUrl;
+    }
+};
+
 const link_size = 159;
 const str_size = 179;
 
 pub const Info = struct {
-    links: [8][link_size:0]u8,
+    anidb: u32,
+    anilist: u32,
+    anisearch: u32,
+    kitsu: u32,
+    livechart: u32,
+    myanimelist: u32,
     title: [str_size:0]u8,
     image: [str_size:0]u8,
     year: u16,
@@ -36,6 +79,24 @@ pub const Info = struct {
         special,
         unknown,
     };
+
+    pub fn id(info: Info) Id {
+        inline for (@typeInfo(Site).Enum.fields) |field| {
+            if (@field(info, field.name) != math.maxInt(u32))
+                return .{ .site = @field(Site, field.name), .id = @field(info, field.name) };
+        }
+        return .{ .site = Site.anidb, .id = info.anidb };
+    }
+
+    fn getId(site: Site, urls: []const []const u8) u32 {
+        for (urls) |url| {
+            const res = Id.fromUrl(url) catch continue;
+            if (res.site == site)
+                return res.id;
+        }
+
+        return math.maxInt(u32);
+    }
 
     pub fn fromJsonList(stream: *json.TokenStream, allocator: *mem.Allocator) !std.MultiArrayList(Info) {
         try expectJsonToken(stream, .ObjectBegin);
@@ -65,7 +126,7 @@ pub const Info = struct {
     }
 
     pub fn fromJson(stream: *json.TokenStream) !Info {
-        var buf: [std.mem.page_size * 10]u8 = undefined;
+        var buf: [std.mem.page_size * 20]u8 = undefined;
         var fba = heap.FixedBufferAllocator.init(&buf);
 
         @setEvalBranchQuota(100000000);
@@ -96,16 +157,12 @@ pub const Info = struct {
         const toBuf = sliceToZBuf(u8, str_size, 0);
         const toBufLink = sliceToZBuf(u8, link_size, 0);
         return Info{
-            .links = .{
-                toBufLink(&fba.allocator, if (entry.sources.len > 0) entry.sources[0] else "") catch return error.InvalidEntry,
-                toBufLink(&fba.allocator, if (entry.sources.len > 1) entry.sources[1] else "") catch return error.InvalidEntry,
-                toBufLink(&fba.allocator, if (entry.sources.len > 2) entry.sources[2] else "") catch return error.InvalidEntry,
-                toBufLink(&fba.allocator, if (entry.sources.len > 3) entry.sources[3] else "") catch return error.InvalidEntry,
-                toBufLink(&fba.allocator, if (entry.sources.len > 4) entry.sources[4] else "") catch return error.InvalidEntry,
-                toBufLink(&fba.allocator, if (entry.sources.len > 5) entry.sources[5] else "") catch return error.InvalidEntry,
-                toBufLink(&fba.allocator, if (entry.sources.len > 6) entry.sources[6] else "") catch return error.InvalidEntry,
-                toBufLink(&fba.allocator, if (entry.sources.len > 7) entry.sources[7] else "") catch return error.InvalidEntry,
-            },
+            .anidb = getId(.anidb, entry.sources),
+            .anilist = getId(.anilist, entry.sources),
+            .anisearch = getId(.anisearch, entry.sources),
+            .kitsu = getId(.kitsu, entry.sources),
+            .livechart = getId(.livechart, entry.sources),
+            .myanimelist = getId(.myanimelist, entry.sources),
             .title = toBuf(&fba.allocator, entry.title) catch return error.InvalidEntry,
             .image = toBuf(&fba.allocator, entry.picture) catch return error.InvalidEntry,
             .type = switch (entry.type) {
@@ -155,10 +212,10 @@ pub const List = struct {
         }
     }
 
-    pub fn findWithLink(list: List, link: []const u8) ?*Entry {
-        return list.find(link, struct {
-            fn match(l: []const u8, entry: Entry) bool {
-                return mem.startsWith(u8, &entry.link, l) and entry.link[l.len] == 0;
+    pub fn findWithId(list: List, id: Id) ?*Entry {
+        return list.find(id, struct {
+            fn match(i: Id, entry: Entry) bool {
+                return entry.id.id == i.id and entry.id.site == i.site;
             }
         }.match);
     }
@@ -189,7 +246,7 @@ pub const Entry = struct {
     episodes: usize,
     watched: usize,
     title: [str_size:0]u8,
-    link: [link_size:0]u8,
+    id: Id,
 
     pub const Status = enum {
         complete,
@@ -245,7 +302,12 @@ pub const Entry = struct {
             .gt => return false,
             .eq => {},
         }
-        switch (mem.order(u8, &a.link, &b.link)) {
+        switch (math.order(@enumToInt(a.id.site), @enumToInt(b.id.site))) {
+            .lt => return true,
+            .gt => return false,
+            .eq => {},
+        }
+        switch (math.order(a.id.id, b.id.id)) {
             .lt => return true,
             .gt => return false,
             .eq => {},
@@ -259,7 +321,7 @@ pub const Entry = struct {
     }
 
     pub fn writeToDsv(entry: Entry, writer: anytype) !void {
-        try writer.print("{d:4>2}-{d:0>2}-{d:0>2}\t{s}\t{}\t{}\t{s}\t{s}", .{
+        try writer.print("{d:4>2}-{d:0>2}-{d:0>2}\t{s}\t{}\t{}\t{s}\t{s}{d}", .{
             entry.date.year,
             entry.date.month,
             entry.date.day,
@@ -267,7 +329,8 @@ pub const Entry = struct {
             entry.episodes,
             entry.watched,
             mem.spanZ(&entry.title),
-            mem.spanZ(&entry.link),
+            entry.id.site.url(),
+            entry.id.id,
         });
     }
 
@@ -297,7 +360,11 @@ pub const Entry = struct {
     const status = mecha.convert(Status, Status.fromString, any);
 
     const string = mecha.convert([str_size:0]u8, sliceToZBuf(u8, str_size, 0), any);
-    const link = mecha.convert([link_size:0]u8, sliceToZBuf(u8, link_size, 0), any);
+    const link = mecha.convert(Id, struct {
+        fn conv(_: *mem.Allocator, in: []const u8) !Id {
+            return Id.fromUrl(in);
+        }
+    }.conv, any);
 
     const any = mecha.many(mecha.ascii.not(mecha.ascii.char('\t')), .{ .collect = false });
 };
