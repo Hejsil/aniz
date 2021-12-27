@@ -16,7 +16,7 @@ pub const Season = enum(u4) {
     undef,
 };
 
-pub const Site = enum {
+pub const Site = enum(u3) {
     anidb,
     anilist,
     anisearch,
@@ -98,7 +98,7 @@ pub const Info = struct {
         return math.maxInt(u32);
     }
 
-    pub fn fromJsonList(stream: *json.TokenStream, allocator: *mem.Allocator) !std.MultiArrayList(Info) {
+    pub fn fromJsonList(stream: *json.TokenStream, allocator: mem.Allocator) !std.MultiArrayList(Info) {
         try expectJsonToken(stream, .ObjectBegin);
         try expectJsonString(stream, "data");
         try expectJsonToken(stream, .ArrayBegin);
@@ -148,14 +148,13 @@ pub const Info = struct {
                 tags: []const []const u8,
             },
             stream,
-            .{ .allocator = &fba.allocator, .allow_trailing_data = true },
+            .{ .allocator = fba.allocator(), .allow_trailing_data = true },
         );
 
         if (entry.sources.len == 0)
             return error.InvalidEntry;
 
         const toBuf = sliceToZBuf(u8, str_size, 0);
-        const toBufLink = sliceToZBuf(u8, link_size, 0);
         return Info{
             .anidb = getId(.anidb, entry.sources),
             .anilist = getId(.anilist, entry.sources),
@@ -163,8 +162,8 @@ pub const Info = struct {
             .kitsu = getId(.kitsu, entry.sources),
             .livechart = getId(.livechart, entry.sources),
             .myanimelist = getId(.myanimelist, entry.sources),
-            .title = toBuf(&fba.allocator, entry.title) catch return error.InvalidEntry,
-            .image = toBuf(&fba.allocator, entry.picture) catch return error.InvalidEntry,
+            .title = toBuf(fba.allocator(), entry.title) catch return error.InvalidEntry,
+            .image = toBuf(fba.allocator(), entry.picture) catch return error.InvalidEntry,
             .type = switch (entry.type) {
                 .TV => .tv,
                 .MOVIE => .movie,
@@ -190,15 +189,15 @@ pub const List = struct {
     entries: std.ArrayListUnmanaged(Entry),
 
     // Omg, stop making the deinit function take a mutable pointer plz...
-    pub fn deinit(list: *List, allocator: *mem.Allocator) void {
+    pub fn deinit(list: *List, allocator: mem.Allocator) void {
         list.entries.deinit(allocator);
     }
 
-    pub fn fromDsv(allocator: *mem.Allocator, dsv: []const u8) !List {
+    pub fn fromDsv(allocator: mem.Allocator, dsv: []const u8) !List {
         var res = std.ArrayListUnmanaged(Entry){};
         errdefer res.deinit(allocator);
 
-        var it = mem.tokenize(dsv, "\n");
+        var it = mem.tokenize(u8, dsv, "\n");
         while (it.next()) |line|
             try res.append(allocator, try Entry.fromDsv(line));
         return List{ .entries = res };
@@ -229,8 +228,6 @@ pub const List = struct {
         return null;
     }
 
-    pub fn remove(list: *List, entry: *const Entry) void {}
-
     pub fn sort(list: List) void {
         std.sort.sort(Entry, list.entries.items, {}, struct {
             fn lessThan(_: void, a: Entry, b: Entry) bool {
@@ -255,7 +252,7 @@ pub const Entry = struct {
         plan_to_watch,
         watching,
 
-        pub fn fromString(_: *mem.Allocator, str: []const u8) !Status {
+        pub fn fromString(_: mem.Allocator, str: []const u8) !Status {
             return std.ComptimeStringMap(Status, .{
                 .{ "c", .complete },
                 .{ "d", .dropped },
@@ -317,7 +314,7 @@ pub const Entry = struct {
 
     pub fn fromDsv(row: []const u8) !Entry {
         var fba = heap.FixedBufferAllocator.init("");
-        return (dsv(&fba.allocator, row) catch return error.InvalidEntry).value;
+        return (dsv(fba.allocator(), row) catch return error.InvalidEntry).value;
     }
 
     pub fn writeToDsv(entry: Entry, writer: anytype) !void {
@@ -328,7 +325,7 @@ pub const Entry = struct {
             entry.status.toString(),
             entry.episodes,
             entry.watched,
-            mem.spanZ(&entry.title),
+            mem.sliceTo(&entry.title, 0),
             entry.id.site.url(),
             entry.id.id,
         });
@@ -361,7 +358,7 @@ pub const Entry = struct {
 
     const string = mecha.convert([str_size:0]u8, sliceToZBuf(u8, str_size, 0), any);
     const link = mecha.convert(Id, struct {
-        fn conv(_: *mem.Allocator, in: []const u8) !Id {
+        fn conv(_: mem.Allocator, in: []const u8) !Id {
             return Id.fromUrl(in);
         }
     }.conv, any);
@@ -369,7 +366,7 @@ pub const Entry = struct {
     const any = mecha.many(mecha.ascii.not(mecha.ascii.char('\t')), .{ .collect = false });
 };
 
-fn expectJsonToken(stream: *json.TokenStream, id: std.meta.TagType(json.Token)) !void {
+fn expectJsonToken(stream: *json.TokenStream, id: std.meta.Tag(json.Token)) !void {
     const token = (try stream.next()) orelse return error.UnexpectEndOfStream;
     if (token != id)
         return error.UnexpectJsonToken;
@@ -392,9 +389,9 @@ fn sliceToZBuf(
     comptime T: type,
     comptime len: usize,
     comptime sentinel: T,
-) fn (*mem.Allocator, []const T) mecha.Error![len:sentinel]T {
+) fn (mem.Allocator, []const T) mecha.Error![len:sentinel]T {
     return struct {
-        fn func(_: *mem.Allocator, slice: []const T) mecha.Error![len:sentinel]T {
+        fn func(_: mem.Allocator, slice: []const T) mecha.Error![len:sentinel]T {
             if (slice.len > len)
                 return error.ParserFailed;
 

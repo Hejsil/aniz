@@ -30,6 +30,8 @@ const params = [_]clap.Param(clap.Help){
 };
 
 fn usage(stream: anytype, command: Command, p: []const clap.Param(clap.Help)) !void {
+    _ = command;
+
     try stream.writeAll("Usage: ");
     try clap.usage(stream, &params);
     try stream.writeAll(
@@ -60,7 +62,7 @@ const Command = enum {
 
 pub fn main() !u8 {
     var gba = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = &gba.allocator;
+    const allocator = gba.allocator();
     defer _ = gba.deinit();
 
     var args_iter = try clap.args.OsIterator.init(allocator);
@@ -87,12 +89,17 @@ pub fn main() !u8 {
     };
 }
 
-fn helpMain(allocator: *mem.Allocator, args_iter: *clap.args.OsIterator) !u8 {
+fn helpMain(allocator: mem.Allocator, args_iter: *clap.args.OsIterator) !u8 {
+    _ = allocator;
+    _ = args_iter;
+
     // TODO
     return 0;
 }
 
-fn fetchMain(allocator: *mem.Allocator, args_iter: *clap.args.OsIterator) !u8 {
+fn fetchMain(allocator: mem.Allocator, args_iter: *clap.args.OsIterator) !u8 {
+    _ = args_iter;
+
     var dir = try openFolder(.cache, .{});
     defer dir.close();
 
@@ -114,7 +121,7 @@ fn fetchMain(allocator: *mem.Allocator, args_iter: *clap.args.OsIterator) !u8 {
     return 0;
 }
 
-fn listMain(allocator: *mem.Allocator) !u8 {
+fn listMain(allocator: mem.Allocator) !u8 {
     var cache_dir = try openFolder(.cache, .{});
     defer cache_dir.close();
 
@@ -151,7 +158,7 @@ fn listMain(allocator: *mem.Allocator) !u8 {
     return 0;
 }
 
-fn databaseMain(allocator: *mem.Allocator) !u8 {
+fn databaseMain(allocator: mem.Allocator) !u8 {
     var dir = try openFolder(.cache, .{});
     defer dir.close();
 
@@ -174,7 +181,7 @@ fn databaseMain(allocator: *mem.Allocator) !u8 {
             info.year,
             @tagName(info.season),
             info.episodes,
-            mem.spanZ(&info.title),
+            mem.sliceTo(&info.title, 0),
             id.site.url(),
             id.id,
             image_dir_path,
@@ -197,7 +204,7 @@ const Action = enum {
 };
 
 fn listManipulateMain(
-    allocator: *mem.Allocator,
+    allocator: mem.Allocator,
     args_iter: *clap.args.OsIterator,
     action: Action,
 ) !u8 {
@@ -241,7 +248,7 @@ fn listManipulateMain(
 }
 
 fn manipulateList(
-    allocator: *mem.Allocator,
+    allocator: mem.Allocator,
     list: *anime.List,
     database: *std.MultiArrayList(anime.Info),
     link: []const u8,
@@ -351,14 +358,14 @@ fn cat(reader: anytype, writer: anytype) !void {
 fn openFolder(folder: folders.KnownFolder, flags: fs.Dir.OpenDirOptions) !fs.Dir {
     var buf: [fs.MAX_PATH_BYTES]u8 = undefined;
     var fba = heap.FixedBufferAllocator.init(&buf);
-    var dir = (try folders.open(&fba.allocator, folder, flags)) orelse
+    var dir = (try folders.open(fba.allocator(), folder, flags)) orelse
         return error.NoCacheDir;
     defer dir.close();
 
     return makeAndOpenDir(dir, program_name);
 }
 
-fn updateImageCache(allocator: *mem.Allocator, dir: fs.Dir, database: *std.MultiArrayList(anime.Info)) !void {
+fn updateImageCache(allocator: mem.Allocator, dir: fs.Dir, database: *std.MultiArrayList(anime.Info)) !void {
     var image_dir = try makeAndOpenDir(dir, image_cache_name);
     defer image_dir.close();
 
@@ -380,7 +387,7 @@ fn updateImageCache(allocator: *mem.Allocator, dir: fs.Dir, database: *std.Multi
 
             // File didn't exist. Download it!
             result.resize(0) catch unreachable;
-            try curl(result.writer(), mem.spanZ(image));
+            try curl(result.writer(), mem.sliceTo(image, 0));
 
             // Some images might have moved. In that case the html will specify
             // the new position.
@@ -446,7 +453,7 @@ fn writeDatabaseFile(dir: fs.Dir, database: std.MultiArrayList(anime.Info)) !voi
     try file.finish();
 }
 
-fn readDatabaseFile(dir: fs.Dir, allocator: *mem.Allocator) !std.MultiArrayList(anime.Info) {
+fn readDatabaseFile(dir: fs.Dir, allocator: mem.Allocator) !std.MultiArrayList(anime.Info) {
     const info_size = comptime blk: {
         var res: usize = 0;
         for (@typeInfo(anime.Info).Struct.fields) |field|
@@ -473,7 +480,7 @@ fn readDatabaseFile(dir: fs.Dir, allocator: *mem.Allocator) !std.MultiArrayList(
     return res;
 }
 
-fn curlAlloc(allocator: *mem.Allocator, link: []const u8) ![]u8 {
+fn curlAlloc(allocator: mem.Allocator, link: []const u8) ![]u8 {
     var list = std.ArrayList(u8).init(allocator);
     errdefer list.deinit();
 
@@ -484,7 +491,7 @@ fn curlAlloc(allocator: *mem.Allocator, link: []const u8) ![]u8 {
 fn curl(writer: anytype, link: []const u8) !void {
     var alloc_buf: [std.mem.page_size * 10]u8 = undefined;
     var fba = heap.FixedBufferAllocator.init(&alloc_buf);
-    const proc = try std.ChildProcess.init(&[_][]const u8{ "curl", "-s", link }, &fba.allocator);
+    const proc = try std.ChildProcess.init(&[_][]const u8{ "curl", "-s", link }, fba.allocator());
     proc.stdin_behavior = .Ignore;
     proc.stderr_behavior = .Ignore;
     proc.stdout_behavior = .Pipe;
