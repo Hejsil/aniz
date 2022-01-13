@@ -100,7 +100,7 @@ pub const Info = struct {
 
     pub fn fromJsonList(stream: *json.TokenStream, allocator: mem.Allocator) !std.MultiArrayList(Info) {
         try expectJsonToken(stream, .ObjectBegin);
-        try expectJsonString(stream, "data");
+        try skipToField(stream, "data");
         try expectJsonToken(stream, .ArrayBegin);
 
         var res = std.MultiArrayList(Info){};
@@ -372,15 +372,30 @@ fn expectJsonToken(stream: *json.TokenStream, id: std.meta.Tag(json.Token)) !voi
         return error.UnexpectJsonToken;
 }
 
+fn skipToField(stream: *json.TokenStream, field: []const u8) !void {
+    var level: usize = 0;
+    while (try stream.next()) |token| switch (token) {
+        .ObjectBegin => level += 1,
+        .ObjectEnd => level = try math.sub(usize, level, 1),
+        .String => |string_token| if (level == 0) {
+            // TODO: Man, I really wanted to use `json.encodesTo` but the Zig standard library
+            //       said "No fun allowed" so I'll have to make do with `mem.eql` even though
+            //       that is the wrong api for this task...
+            if (mem.eql(u8, field, string_token.slice(stream.slice, stream.i - 1)))
+                return;
+        },
+        else => {},
+    };
+
+    return error.EndOfStream;
+}
+
 fn expectJsonString(stream: *json.TokenStream, string: []const u8) !void {
     const token = switch ((try stream.next()) orelse return error.UnexpectEndOfStream) {
         .String => |string_token| string_token,
         else => return error.UnexpectJsonToken,
     };
 
-    // TODO: Man, I really wanted to use `json.encodesTo` but the Zig standard library
-    //       said "No fun allowed" so I'll have to make do with `mem.eql` even though
-    //       that is the wrong api for this task...
     if (!mem.eql(u8, string, token.slice(stream.slice, stream.i - 1)))
         return error.UnexpectJsonString;
 }
