@@ -65,10 +65,12 @@ pub fn main() !u8 {
     const allocator = gba.allocator();
     defer _ = gba.deinit();
 
-    var args_iter = try clap.args.OsIterator.init(allocator);
+    var args_iter = try std.process.argsWithAllocator(allocator);
     defer args_iter.deinit();
 
-    const command_str = (try args_iter.next()) orelse "help";
+    _ = args_iter.next();
+
+    const command_str = args_iter.next() orelse "help";
     const command = std.meta.stringToEnum(Command, command_str) orelse .help;
 
     return switch (command) {
@@ -89,7 +91,7 @@ pub fn main() !u8 {
     };
 }
 
-fn helpMain(allocator: mem.Allocator, args_iter: *clap.args.OsIterator) !u8 {
+fn helpMain(allocator: mem.Allocator, args_iter: *std.process.ArgIterator) !u8 {
     _ = allocator;
     _ = args_iter;
 
@@ -97,7 +99,7 @@ fn helpMain(allocator: mem.Allocator, args_iter: *clap.args.OsIterator) !u8 {
     return 0;
 }
 
-fn fetchMain(allocator: mem.Allocator, args_iter: *clap.args.OsIterator) !u8 {
+fn fetchMain(allocator: mem.Allocator, args_iter: *std.process.ArgIterator) !u8 {
     _ = args_iter;
 
     var dir = try openFolder(.cache, .{});
@@ -205,7 +207,7 @@ const Action = enum {
 
 fn listManipulateMain(
     allocator: mem.Allocator,
-    args_iter: *clap.args.OsIterator,
+    args_iter: *std.process.ArgIterator,
     action: Action,
 ) !u8 {
     var data_dir = try openFolder(.data, .{});
@@ -234,7 +236,7 @@ fn listManipulateMain(
     };
     defer database.deinit(allocator);
 
-    while (try args_iter.next()) |anime_link|
+    while (args_iter.next()) |anime_link|
         try manipulateList(allocator, &list, &database, anime_link, action);
 
     var file = try data_dir.atomicFile(list_name, .{});
@@ -373,7 +375,7 @@ fn updateImageCache(allocator: mem.Allocator, dir: fs.Dir, database: *std.MultiA
     defer result.deinit();
 
     var progress = std.Progress{};
-    const root_node = try progress.start("", database.len);
+    const root_node = progress.start("", database.len);
     defer root_node.end();
 
     // TODO: Have a channel, and push links into that channel. Have N
