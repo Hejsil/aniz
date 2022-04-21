@@ -10,3 +10,6 @@
 [submodule "lib/mecha"]
 	path = lib/mecha
 	url = ../../Hejsil/mecha.git
+[submodule "lib/anime-offline-database"]
+	path = lib/anime-offline-database
+	url = git@github.com:manami-project/anime-offline-database.git
