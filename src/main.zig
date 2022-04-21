@@ -293,45 +293,38 @@ fn manipulateList(
 
     switch (action) {
         .complete => {
-            if (entry.status != .complete)
-                entry.date = datetime.Date.now();
-
+            entry.date = datetime.Date.now();
             entry.status = .complete;
             entry.watched += 1;
             entry.episodes = database_entry.episodes;
         },
         .dropped => {
-            if (entry.status != .dropped)
-                entry.date = datetime.Date.now();
-
+            entry.date = datetime.Date.now();
             entry.watched = 0;
             entry.status = .dropped;
         },
         .on_hold => {
-            if (entry.status != .on_hold)
-                entry.date = datetime.Date.now();
-
+            entry.date = datetime.Date.now();
             entry.watched = 0;
             entry.status = .on_hold;
         },
         .plan_to_watch => {
-            if (entry.status != .plan_to_watch)
-                entry.date = datetime.Date.now();
-
+            entry.date = datetime.Date.now();
             entry.watched = 0;
             entry.status = .plan_to_watch;
         },
         .watching => {
-            if (entry.status != .watching)
-                entry.date = datetime.Date.now();
-
+            entry.date = datetime.Date.now();
             entry.watched = 0;
             entry.status = .watching;
         },
-        .watch_episode => entry.episodes = math.min(
-            database_entry.episodes,
-            entry.episodes + 1,
-        ),
+        .watch_episode => {
+            entry.date = datetime.Date.now();
+            entry.episodes = math.min(
+                database_entry.episodes,
+                entry.episodes + 1,
+            );
+        },
         .remove => {
             const index = (@ptrToInt(entry) - @ptrToInt(list.entries.items.ptr)) /
                 @sizeOf(anime.Entry);
