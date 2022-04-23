@@ -105,32 +105,20 @@ fn databaseMain(args_iter: *std.process.ArgIterator) !u8 {
         const link_id = anime.Id.fromUrl(link) catch continue;
         const i = database.findWithId(link_id) orelse continue;
         const info = database.get(i);
-        const id = info.id() orelse continue;
-        try stdout.print("{s}\t{}\t{s}\t{}\t{s}\t{s}{d}\t{s}\n", .{
-            @tagName(info.kind),
-            info.year,
-            @tagName(info.season),
-            info.episodes,
-            info.title,
-            id.site.url(),
-            id.id,
-            info.image,
-        });
+        info.writeToDsv(stdout) catch |err| switch (err) {
+            error.InfoHasNoId => continue,
+            else => |e| return e,
+        };
+        try stdout.writeAll("\n");
     }
 
     if (!have_searched) for (database.kind) |_, i| {
         const info = database.get(i);
-        const id = info.id() orelse continue;
-        try stdout.print("{s}\t{}\t{s}\t{}\t{s}\t{s}{d}\t{s}\n", .{
-            @tagName(info.kind),
-            info.year,
-            @tagName(info.season),
-            info.episodes,
-            info.title,
-            id.site.url(),
-            id.id,
-            info.image,
-        });
+        info.writeToDsv(stdout) catch |err| switch (err) {
+            error.InfoHasNoId => continue,
+            else => |e| return e,
+        };
+        try stdout.writeAll("\n");
     };
 
     try stdout.context.flush();

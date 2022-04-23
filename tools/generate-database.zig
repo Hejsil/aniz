@@ -23,10 +23,8 @@ pub fn main() !void {
         math.maxInt(usize),
     );
 
-    const database = try anime.Info.fromJsonList(
-        &json.TokenStream.init(database_json),
-        arena,
-    );
+    var stream = json.TokenStream.init(database_json);
+    const database = try anime.Info.fromJsonList(&stream, arena);
 
     const out_file = try fs.cwd().createFile(out, .{});
     defer out_file.close();
@@ -86,13 +84,13 @@ pub fn main() !void {
         \\
     );
 
-    inline for (@typeInfo(anime.Site).Enum.fields) |field| {
+    inline for (@typeInfo(anime.Id.Site).Enum.fields) |field| {
         try writer.print(
             \\pub const {s} = [_]anime.OptionalId{{
             \\
         , .{field.name});
 
-        const slice = switch (@field(anime.Site, field.name)) {
+        const slice = switch (@field(anime.Id.Site, field.name)) {
             .anidb => database.items(.anidb),
             .anilist => database.items(.anilist),
             .anisearch => database.items(.anisearch),
@@ -118,6 +116,7 @@ pub fn main() !void {
 
     const StringFields = enum { title, image };
 
+    var string_indexs = std.StringHashMap(usize).init(arena);
     var strings = std.ArrayList(u8).init(arena);
     inline for ([_]StringFields{ .title, .image }) |field| {
         try writer.print(
@@ -131,11 +130,14 @@ pub fn main() !void {
         };
 
         for (slice) |string| {
-            const index = strings.items.len;
-            try writer.print("    @intToEnum(StringIndex, {}),\n", .{index});
+            const entry = try string_indexs.getOrPut(string);
+            if (!entry.found_existing) {
+                entry.value_ptr.* = strings.items.len;
+                try strings.appendSlice(string);
+                try strings.append(0);
+            }
 
-            try strings.appendSlice(string);
-            try strings.append(0);
+            try writer.print("    @intToEnum(StringIndex, {}),\n", .{entry.value_ptr.*});
         }
 
         try writer.writeAll(

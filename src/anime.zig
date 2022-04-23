@@ -3,30 +3,11 @@ const mecha = @import("mecha");
 const std = @import("std");
 
 const debug = std.debug;
+const fmt = std.fmt;
 const heap = std.heap;
 const json = std.json;
 const math = std.math;
 const mem = std.mem;
-
-pub const Site = enum(u3) {
-    anidb,
-    anilist,
-    anisearch,
-    kitsu,
-    livechart,
-    myanimelist,
-
-    pub fn url(site: Site) []const u8 {
-        return switch (site) {
-            .anidb => "https://anidb.net/anime/",
-            .anilist => "https://anilist.co/anime/",
-            .anisearch => "https://anisearch.com/anime/",
-            .kitsu => "https://kitsu.io/anime/",
-            .livechart => "https://livechart.me/anime/",
-            .myanimelist => "https://myanimelist.net/anime/",
-        };
-    }
-};
 
 pub const Id = struct {
     site: Site,
@@ -44,6 +25,37 @@ pub const Id = struct {
 
         return error.InvalidUrl;
     }
+
+    pub fn format(
+        id: Id,
+        comptime f: []const u8,
+        options: fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = f;
+        _ = options;
+        return writer.print("{s}{d}", .{ id.site.url(), id.id });
+    }
+
+    pub const Site = enum(u3) {
+        anidb,
+        anilist,
+        anisearch,
+        kitsu,
+        livechart,
+        myanimelist,
+
+        pub fn url(site: Site) []const u8 {
+            return switch (site) {
+                .anidb => "https://anidb.net/anime/",
+                .anilist => "https://anilist.co/anime/",
+                .anisearch => "https://anisearch.com/anime/",
+                .kitsu => "https://kitsu.io/anime/",
+                .livechart => "https://livechart.me/anime/",
+                .myanimelist => "https://myanimelist.net/anime/",
+            };
+        }
+    };
 };
 
 pub const OptionalId = enum(u32) {
@@ -56,9 +68,6 @@ pub const OptionalId = enum(u32) {
         return @enumToInt(id);
     }
 };
-
-const link_size = 159;
-const str_size = 179;
 
 pub const Info = struct {
     anidb: OptionalId,
@@ -92,14 +101,14 @@ pub const Info = struct {
     };
 
     pub fn id(info: Info) ?Id {
-        inline for (@typeInfo(Site).Enum.fields) |field| {
+        inline for (@typeInfo(Id.Site).Enum.fields) |field| {
             if (@field(info, field.name).unwrap()) |res|
-                return Id{ .site = @field(Site, field.name), .id = res };
+                return Id{ .site = @field(Id.Site, field.name), .id = res };
         }
         return null;
     }
 
-    fn getId(site: Site, urls: []const []const u8) OptionalId {
+    fn getId(site: Id.Site, urls: []const []const u8) OptionalId {
         for (urls) |url| {
             const res = Id.fromUrl(url) catch continue;
             if (res.site == site)
@@ -107,6 +116,19 @@ pub const Info = struct {
         }
 
         return .none;
+    }
+
+    pub fn writeToDsv(info: Info, writer: anytype) !void {
+        const info_id = info.id() orelse return error.InfoHasNoId;
+        try writer.print("{s}\t{}\t{s}\t{}\t{s}\t{}\t{s}", .{
+            @tagName(info.kind),
+            info.year,
+            @tagName(info.season),
+            info.episodes,
+            info.title,
+            info_id,
+            info.image,
+        });
     }
 
     pub fn fromJsonList(stream: *json.TokenStream, allocator: mem.Allocator) !std.MultiArrayList(Info) {
