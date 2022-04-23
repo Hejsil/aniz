@@ -56,11 +56,12 @@ pub fn main() !void {
         \\        .livechart = livechart[index],
         \\        .myanimelist = myanimelist[index],
         \\        .title = title[index].toString(),
-        \\        .image = image[index].toString(),
+        \\        .image_base = image_base[index].toString(),
+        \\        .image_path = image_path[index].toString(),
         \\        .year = year[index],
         \\        .episodes = episodes[index],
-        \\        .kind = kind[index],
-        \\        .season = season[index],
+        \\        .kind = season_and_kind[index].kind,
+        \\        .season = season_and_kind[index].season,
         \\    };
         \\}
         \\
@@ -80,6 +81,11 @@ pub fn main() !void {
         \\
         \\    return null;
         \\}
+        \\
+        \\pub const SeasonAndKind = packed struct {
+        \\    kind: anime.Info.Kind,
+        \\    season: anime.Info.Season,
+        \\};
         \\
         \\
     );
@@ -114,11 +120,11 @@ pub fn main() !void {
         );
     }
 
-    const StringFields = enum { title, image };
+    const StringFields = enum { title, image_base, image_path };
 
     var string_indexs = std.StringHashMap(usize).init(arena);
     var strings = std.ArrayList(u8).init(arena);
-    inline for ([_]StringFields{ .title, .image }) |field| {
+    inline for ([_]StringFields{ .title, .image_base, .image_path }) |field| {
         try writer.print(
             \\pub const {s} = [_]StringIndex{{
             \\
@@ -126,7 +132,8 @@ pub fn main() !void {
 
         const slice = switch (field) {
             .title => database.items(.title),
-            .image => database.items(.image),
+            .image_base => database.items(.image_base),
+            .image_path => database.items(.image_path),
         };
 
         for (slice) |string| {
@@ -175,22 +182,19 @@ pub fn main() !void {
         );
     }
 
-    const EnumFields = enum { kind, season };
-    inline for ([_]EnumFields{ .kind, .season }) |field| {
-        const field_name = @tagName(field);
-        try writer.print(
-            \\pub const {s} = [_]anime.Info.{c}{s}{{
+    {
+        const kinds = database.items(.kind);
+        const seasons = database.items(.season);
+        try writer.writeAll(
+            \\pub const season_and_kind = [_]SeasonAndKind{
             \\
-        , .{ field_name, std.ascii.toUpper(field_name[0]), field_name[1..] });
-
-        const slice = switch (field) {
-            .kind => database.items(.kind),
-            .season => database.items(.season),
-        };
-
-        for (slice) |tag|
-            try writer.print("    .{s},\n", .{@tagName(tag)});
-
+        );
+        for (kinds) |_, i| {
+            try writer.print("    .{{ .kind = .{s}, .season = .{s} }},\n", .{
+                @tagName(kinds[i]),
+                @tagName(seasons[i]),
+            });
+        }
         try writer.writeAll(
             \\};
             \\

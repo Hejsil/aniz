@@ -112,7 +112,7 @@ fn databaseMain(args_iter: *std.process.ArgIterator) !u8 {
         try stdout.writeAll("\n");
     }
 
-    if (!have_searched) for (database.kind) |_, i| {
+    if (!have_searched) for (database.anidb) |_, i| {
         const info = database.get(i);
         info.writeToDsv(stdout) catch |err| switch (err) {
             error.InfoHasNoId => continue,

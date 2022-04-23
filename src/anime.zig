@@ -77,7 +77,8 @@ pub const Info = struct {
     livechart: OptionalId,
     myanimelist: OptionalId,
     title: []const u8,
-    image: []const u8,
+    image_base: []const u8,
+    image_path: []const u8,
     year: u16,
     episodes: u16,
     kind: Kind,
@@ -120,14 +121,15 @@ pub const Info = struct {
 
     pub fn writeToDsv(info: Info, writer: anytype) !void {
         const info_id = info.id() orelse return error.InfoHasNoId;
-        try writer.print("{s}\t{}\t{s}\t{}\t{s}\t{}\t{s}", .{
+        try writer.print("{s}\t{}\t{s}\t{}\t{s}\t{}\t{s}{s}", .{
             @tagName(info.kind),
             info.year,
             @tagName(info.season),
             info.episodes,
             info.title,
             info_id,
-            info.image,
+            info.image_base,
+            info.image_path,
         });
     }
 
@@ -187,10 +189,30 @@ pub const Info = struct {
         if (entry.sources.len == 0)
             return error.InvalidEntry;
 
+        // Keep reverse sorted: sort -r
+        const image_bases = [_][]const u8{
+            "https://u.livechart.me/anime/",
+            "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/",
+            "https://media.notify.moe/images/anime/large/",
+            "https://media.kitsu.io/anime/poster_images/",
+            "https://media.kitsu.io/anime/",
+            "https://cdn.myanimelist.net/images/anime/",
+            "https://cdn.myanimelist.net/images/",
+            "https://cdn.anisearch.com/images/anime/cover/full/",
+            "https://cdn.anime-planet.com/images/anime/default/",
+            "https://cdn.anime-planet.com/anime/primary/",
+            "https://cdn.anidb.net/images/main/",
+        };
+
+        const image_base = for (image_bases) |base| {
+            if (mem.startsWith(u8, entry.picture, base))
+                break base;
+        } else return error.InvalidImageUrl;
+
         const title = try allocator.dupe(u8, entry.title);
         errdefer allocator.free(title);
-        const image = try allocator.dupe(u8, entry.picture);
-        errdefer allocator.free(image);
+        const image_path = try allocator.dupe(u8, entry.picture[image_base.len..]);
+        errdefer allocator.free(image_path);
 
         return Info{
             .anidb = getId(.anidb, entry.sources),
@@ -200,7 +222,8 @@ pub const Info = struct {
             .livechart = getId(.livechart, entry.sources),
             .myanimelist = getId(.myanimelist, entry.sources),
             .title = title,
-            .image = image,
+            .image_base = image_base,
+            .image_path = image_path,
             .kind = switch (entry.type) {
                 .TV => .tv,
                 .MOVIE => .movie,
