@@ -12,26 +12,12 @@ const json = std.json;
 const math = std.math;
 const mem = std.mem;
 const meta = std.meta;
+const process = std.process;
 
 const list_name = "list";
 const program_name = "anilist";
 
-const Command = enum {
-    @"--help",
-    complete,
-    database,
-    drop,
-    help,
-    list,
-    plan_to_watch,
-    put_on_hold,
-    remove,
-    start_watching,
-    update,
-    watch_episode,
-};
-
-pub fn main() !u8 {
+pub fn main() !void {
     var gba = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gba.allocator();
     defer _ = gba.deinit();
@@ -42,66 +28,258 @@ pub fn main() !u8 {
     _ = args_iter.next();
 
     const command_str = args_iter.next() orelse "help";
-    const command = std.meta.stringToEnum(Command, command_str) orelse .help;
 
-    return switch (command) {
-        .help, .@"--help" => try helpMain(allocator, &args_iter),
+    for ([_][]const SubCommand{
+        &list_modifying_sub_commands,
+        &print_csv_sub_commands,
+        &other_sub_commands,
+    }) |sub_commands| {
+        for (sub_commands) |sub_command| {
+            if (mem.eql(u8, command_str, sub_command.name))
+                return sub_command.func(sub_command, allocator, &args_iter);
+        }
+    }
 
-        .database => try databaseMain(&args_iter),
-        .list => try listMain(allocator),
-
-        .complete => try listManipulateMain(allocator, &args_iter, .complete),
-        .drop => try listManipulateMain(allocator, &args_iter, .dropped),
-        .plan_to_watch => try listManipulateMain(allocator, &args_iter, .plan_to_watch),
-        .put_on_hold => try listManipulateMain(allocator, &args_iter, .on_hold),
-        .remove => try listManipulateMain(allocator, &args_iter, .remove),
-        .start_watching => try listManipulateMain(allocator, &args_iter, .watching),
-        .update => try listManipulateMain(allocator, &args_iter, .update),
-        .watch_episode => try listManipulateMain(allocator, &args_iter, .watch_episode),
-    };
+    return helpMain(help_sub_command, allocator, &args_iter);
 }
 
-fn helpMain(allocator: mem.Allocator, args_iter: *std.process.ArgIterator) !u8 {
+const SubCommand = struct {
+    name: []const u8,
+    func: fn (SubCommand, mem.Allocator, *process.ArgIterator) anyerror!void,
+    description: []const u8,
+
+    fn help(sub_command: SubCommand, writer: anytype) !void {
+        const spaces = " " ** 20;
+        try writer.writeAll("    ");
+        try writer.writeAll(sub_command.name);
+        try writer.writeAll(spaces[sub_command.name.len..]);
+        try writer.writeAll(sub_command.description);
+        try writer.writeAll("\n");
+    }
+
+    fn usageOut(sub_command: SubCommand, p: []const clap.Param(clap.Help)) !void {
+        var stdout_buffered = io.bufferedWriter(io.getStdOut().writer());
+        try sub_command.usage(stdout_buffered.writer(), p);
+        try stdout_buffered.flush();
+    }
+
+    fn usageErr(sub_command: SubCommand, p: []const clap.Param(clap.Help)) !void {
+        var stderr_buffered = io.bufferedWriter(io.getStdErr().writer());
+        try sub_command.usage(stderr_buffered.writer(), p);
+        try stderr_buffered.flush();
+    }
+
+    fn usage(sub_command: SubCommand, stream: anytype, p: []const clap.Param(clap.Help)) !void {
+        try stream.print("Usage: {s} {s} ", .{ program_name, sub_command.name });
+        try clap.usage(stream, clap.Help, p);
+        try stream.writeAll("\n\n");
+        try stream.writeAll(sub_command.description);
+        try stream.writeAll(
+            \\
+            \\
+            \\Options:
+            \\
+        );
+        try clap.help(stream, clap.Help, p, .{});
+    }
+};
+
+const list_modifying_sub_commands = [_]SubCommand{
+    .{ .name = "complete", .func = completeMain, .description = "Mark animes as completed." },
+    .{ .name = "drop", .func = dropMain, .description = "Mark animes as dropped." },
+    .{ .name = "on-hold", .func = onHoldMain, .description = "Mark animes as on hold." },
+    .{ .name = "plan-to-watch", .func = planToWatchMain, .description = "Mark animes as plan to watch." },
+    .{ .name = "remove", .func = removeMain, .description = "Remove animes from your list." },
+    .{ .name = "update", .func = updateMain, .description = "Update animes information in your list." },
+    .{ .name = "watch-episode", .func = watchEpisodeMain, .description = "Increase the number of episodes watch on animes by one." },
+    .{ .name = "watching", .func = watchingMain, .description = "Mark animes as watching." },
+};
+
+const print_csv_sub_commands = [_]SubCommand{
+    .{ .name = "database", .func = databaseMain, .description = "Print the entire database as tsv." },
+    .{ .name = "list", .func = listMain, .description = "Print your entire anime list as tsv." },
+};
+
+const help_sub_command = SubCommand{
+    .name = "help",
+    .func = helpMain,
+    .description = "Print this help message and exit.",
+};
+const other_sub_commands = [_]SubCommand{help_sub_command};
+
+const clap_parsers = .{ .anime = clap.parsers.string };
+
+fn helpMain(
+    _: SubCommand,
+    allocator: mem.Allocator,
+    args_iter: *std.process.ArgIterator,
+) anyerror!void {
     _ = allocator;
     _ = args_iter;
 
-    // TODO
-    return 0;
-}
+    var stdout_buffered = io.bufferedWriter(io.getStdOut().writer());
+    const stdout = stdout_buffered.writer();
 
-fn listMain(allocator: mem.Allocator) !u8 {
-    var data_dir = try openFolder(.data, .{});
-    defer data_dir.close();
+    try stdout.writeAll("Usage: ");
+    try stdout.writeAll(program_name);
+    try stdout.writeAll(
+        \\ [command] [option]...
+        \\
+        \\
+    );
 
-    var list = blk: {
-        const data = data_dir.readFileAlloc(
-            allocator,
-            list_name,
-            math.maxInt(usize),
-        ) catch |err| switch (err) {
-            error.FileNotFound => "",
-            else => |e| return e,
-        };
-        defer allocator.free(data);
+    try stdout.print("{s} is a program for keeping a local list of anime you have watched. " ++
+        "It ships with an anime database embedded in the executable, so it does not require " ++
+        "an internet connection to function. You need to update it to get an up to date anime " ++
+        "database.\n\n", .{program_name});
 
-        break :blk try anime.List.fromDsv(allocator, data);
-    };
-    defer list.deinit();
+    try stdout.print("{s} uses existing site urls as ids for anime. When any help " ++
+        "message refers to <anime>, it refers to such a url.\n\n", .{program_name});
 
-    const stdout = io.bufferedWriter(io.getStdOut().writer()).writer();
-    for (list.entries.items) |entry| {
-        try entry.writeToDsv(stdout);
-        try stdout.writeAll("\n");
+    try stdout.writeAll("Current urls supported are:\n");
+    inline for (@typeInfo(anime.Id.Site).Enum.fields) |field| {
+        try stdout.writeAll("    ");
+        try stdout.writeAll(@field(anime.Id.Site, field.name).url());
+        try stdout.writeAll("<id>\n");
     }
-    try stdout.context.flush();
-    return 0;
+
+    try stdout.writeAll("\n");
+    try stdout.writeAll("To get started, lets try to add Clannad to our list:\n");
+    try stdout.print("    {s} complete 'https://anidb.net/anime/5101'\n\n", .{program_name});
+
+    try stdout.writeAll("We can then see our list with:\n");
+    try stdout.print("    {s} list\n\n", .{program_name});
+
+    try stdout.writeAll("You have now started your own list. Have a look at the other sub " ++
+        "commands to modify your list in different ways.\n\n");
+
+    try stdout.print(
+        "Your list is stored in \"${{XDG_CONFIG_HOME}}/{s}/{s}\".\n",
+        .{ program_name, list_name },
+    );
+
+    try stdout.writeAll(
+        \\
+        \\List Manipulation Commands:
+        \\
+        \\
+    );
+    for (list_modifying_sub_commands) |sub_command|
+        try sub_command.help(stdout);
+
+    try stdout.writeAll(
+        \\
+        \\
+        \\List Printing Commands:
+        \\
+        \\
+    );
+    for (print_csv_sub_commands) |sub_command|
+        try sub_command.help(stdout);
+
+    try stdout.writeAll(
+        \\
+        \\
+        \\Other Commands:
+        \\
+        \\
+    );
+    for (other_sub_commands) |sub_command|
+        try sub_command.help(stdout);
+
+    try stdout_buffered.flush();
 }
 
-fn databaseMain(args_iter: *std.process.ArgIterator) !u8 {
+fn completeMain(
+    sub_command: SubCommand,
+    allocator: mem.Allocator,
+    args_iter: *std.process.ArgIterator,
+) anyerror!void {
+    return listManipulateMain(sub_command, allocator, args_iter, .complete);
+}
+
+fn dropMain(
+    sub_command: SubCommand,
+    allocator: mem.Allocator,
+    args_iter: *std.process.ArgIterator,
+) anyerror!void {
+    return listManipulateMain(sub_command, allocator, args_iter, .drop);
+}
+
+fn planToWatchMain(
+    sub_command: SubCommand,
+    allocator: mem.Allocator,
+    args_iter: *std.process.ArgIterator,
+) anyerror!void {
+    return listManipulateMain(sub_command, allocator, args_iter, .plan_to_watch);
+}
+
+fn onHoldMain(
+    sub_command: SubCommand,
+    allocator: mem.Allocator,
+    args_iter: *std.process.ArgIterator,
+) anyerror!void {
+    return listManipulateMain(sub_command, allocator, args_iter, .on_hold);
+}
+
+fn watchingMain(
+    sub_command: SubCommand,
+    allocator: mem.Allocator,
+    args_iter: *std.process.ArgIterator,
+) anyerror!void {
+    return listManipulateMain(sub_command, allocator, args_iter, .watching);
+}
+
+fn watchEpisodeMain(
+    sub_command: SubCommand,
+    allocator: mem.Allocator,
+    args_iter: *std.process.ArgIterator,
+) anyerror!void {
+    return listManipulateMain(sub_command, allocator, args_iter, .watch_episode);
+}
+
+fn removeMain(
+    sub_command: SubCommand,
+    allocator: mem.Allocator,
+    args_iter: *std.process.ArgIterator,
+) anyerror!void {
+    return listManipulateMain(sub_command, allocator, args_iter, .remove);
+}
+
+fn updateMain(
+    sub_command: SubCommand,
+    allocator: mem.Allocator,
+    args_iter: *std.process.ArgIterator,
+) anyerror!void {
+    return listManipulateMain(sub_command, allocator, args_iter, .update);
+}
+
+fn databaseMain(
+    sub_command: SubCommand,
+    allocator: mem.Allocator,
+    args_iter: *std.process.ArgIterator,
+) anyerror!void {
+    const params = comptime clap.parseParamsComptime(
+        \\-h, --help  Print this help message and exit
+        \\<anime>...
+    );
+
+    var diag = clap.Diagnostic{};
+    var args = clap.parseEx(clap.Help, &params, clap_parsers, args_iter, .{
+        .diagnostic = &diag,
+        .allocator = allocator,
+    }) catch |err| {
+        diag.report(io.getStdErr().writer(), err) catch {};
+        return err;
+    };
+    defer args.deinit();
+
+    if (args.args.help)
+        return sub_command.usageOut(&params);
+
     const stdout = io.bufferedWriter(io.getStdOut().writer()).writer();
 
-    var have_searched = false;
-    while (args_iter.next()) |link| : (have_searched = true) {
+    for (args.positionals) |link| {
         const link_id = anime.Id.fromUrl(link) catch continue;
         const i = database.findWithId(link_id) orelse continue;
         const info = database.get(i);
@@ -112,7 +290,7 @@ fn databaseMain(args_iter: *std.process.ArgIterator) !u8 {
         try stdout.writeAll("\n");
     }
 
-    if (!have_searched) for (database.anidb) |_, i| {
+    if (args.positionals.len == 0) for (database.anidb) |_, i| {
         const info = database.get(i);
         info.writeToDsv(stdout) catch |err| switch (err) {
             error.InfoHasNoId => continue,
@@ -122,12 +300,55 @@ fn databaseMain(args_iter: *std.process.ArgIterator) !u8 {
     };
 
     try stdout.context.flush();
-    return 0;
+}
+
+fn listMain(
+    sub_command: SubCommand,
+    allocator: mem.Allocator,
+    args_iter: *std.process.ArgIterator,
+) anyerror!void {
+    const params = comptime clap.parseParamsComptime(
+        \\-h, --help  Print this help message and exit
+        \\<anime>...
+        \\
+    );
+
+    var diag = clap.Diagnostic{};
+    var args = clap.parseEx(clap.Help, &params, clap_parsers, args_iter, .{
+        .diagnostic = &diag,
+        .allocator = allocator,
+    }) catch |err| {
+        diag.report(io.getStdErr().writer(), err) catch {};
+        return err;
+    };
+    defer args.deinit();
+
+    if (args.args.help)
+        return sub_command.usageOut(&params);
+
+    var list = try loadList(allocator);
+    defer list.deinit();
+
+    const stdout = io.bufferedWriter(io.getStdOut().writer()).writer();
+
+    for (args.positionals) |link| {
+        const link_id = anime.Id.fromUrl(link) catch continue;
+        const entry = list.findWithId(link_id) orelse continue;
+        try entry.writeToDsv(stdout);
+        try stdout.writeAll("\n");
+    }
+
+    if (args.positionals.len == 0) for (list.entries.items) |entry| {
+        try entry.writeToDsv(stdout);
+        try stdout.writeAll("\n");
+    };
+
+    try stdout.context.flush();
 }
 
 const Action = enum {
     complete,
-    dropped,
+    drop,
     on_hold,
     plan_to_watch,
     remove,
@@ -137,39 +358,37 @@ const Action = enum {
 };
 
 fn listManipulateMain(
+    sub_command: SubCommand,
     allocator: mem.Allocator,
     args_iter: *std.process.ArgIterator,
     action: Action,
-) !u8 {
-    var data_dir = try openFolder(.data, .{});
-    defer data_dir.close();
+) !void {
+    const params = comptime clap.parseParamsComptime(
+        \\-h, --help  Print this help message and exit
+        \\<anime>...
+        \\
+    );
 
-    var list = blk: {
-        const data = data_dir.readFileAlloc(
-            allocator,
-            list_name,
-            math.maxInt(usize),
-        ) catch |err| switch (err) {
-            error.FileNotFound => "",
-            else => |e| return e,
-        };
-        defer allocator.free(data);
-
-        break :blk try anime.List.fromDsv(allocator, data);
+    var diag = clap.Diagnostic{};
+    var args = clap.parseEx(clap.Help, &params, clap_parsers, args_iter, .{
+        .diagnostic = &diag,
+        .allocator = allocator,
+    }) catch |err| {
+        diag.report(io.getStdErr().writer(), err) catch {};
+        return err;
     };
+    defer args.deinit();
+
+    if (args.args.help)
+        return sub_command.usageOut(&params);
+
+    var list = try loadList(allocator);
     defer list.deinit();
 
-    while (args_iter.next()) |anime_link|
+    for (args.positionals) |anime_link|
         try manipulateList(allocator, &list, anime_link, action);
 
-    var file = try data_dir.atomicFile(list_name, .{});
-    defer file.deinit();
-
-    const writer = io.bufferedWriter(file.file.writer()).writer();
-    try list.writeToDsv(writer);
-    try writer.context.flush();
-    try file.finish();
-    return 0;
+    try saveList(list);
 }
 
 fn manipulateList(
@@ -209,7 +428,7 @@ fn manipulateList(
             entry.watched += 1;
             entry.episodes = database_entry.episodes;
         },
-        .dropped => {
+        .drop => {
             entry.date = datetime.Date.now();
             entry.watched = 0;
             entry.status = .dropped;
@@ -248,6 +467,36 @@ fn manipulateList(
     }
 }
 
+fn loadList(allocator: mem.Allocator) !anime.List {
+    var data_dir = try openFolder(.data, .{});
+    defer data_dir.close();
+
+    const data = data_dir.readFileAlloc(
+        allocator,
+        list_name,
+        math.maxInt(usize),
+    ) catch |err| switch (err) {
+        error.FileNotFound => "",
+        else => |e| return e,
+    };
+    defer allocator.free(data);
+
+    return try anime.List.fromDsv(allocator, data);
+}
+
+fn saveList(list: anime.List) !void {
+    var data_dir = try openFolder(.data, .{});
+    defer data_dir.close();
+
+    var file = try data_dir.atomicFile(list_name, .{});
+    defer file.deinit();
+
+    const writer = io.bufferedWriter(file.file.writer()).writer();
+    try list.writeToDsv(writer);
+    try writer.context.flush();
+    try file.finish();
+}
+
 fn openFolder(folder: folders.KnownFolder, flags: fs.Dir.OpenDirOptions) !fs.Dir {
     var buf: [fs.MAX_PATH_BYTES]u8 = undefined;
     var fba = heap.FixedBufferAllocator.init(&buf);
@@ -264,17 +513,4 @@ fn makeAndOpenDir(dir: fs.Dir, sub_path: []const u8) !fs.Dir {
         else => |new_err| return new_err,
     };
     return dir.openDir(sub_path, .{});
-}
-
-fn usageCommand(stream: anytype, command: Command, p: []const clap.Param(clap.Help)) !void {
-    try stream.print("Usage: {s} {s} ", .{ program_name, @tagName(command) });
-    try clap.usage(stream, p);
-    try stream.writeAll(
-        \\
-        \\Help message here
-        \\
-        \\Options:
-        \\
-    );
-    try clap.help(stream, p);
 }
