@@ -142,7 +142,11 @@ pub const Info = struct {
         unknown,
     };
 
-    pub fn id(info: Info) ?Id {
+    pub fn id(info: Info) Id {
+        return info.idChecked() orelse unreachable;
+    }
+
+    fn idChecked(info: Info) ?Id {
         inline for (@typeInfo(Id.Site).Enum.fields) |field| {
             if (@field(info, field.name).unwrap()) |res|
                 return Id{ .site = @field(Id.Site, field.name), .id = res };
@@ -161,7 +165,7 @@ pub const Info = struct {
     }
 
     pub fn writeToDsv(info: Info, writer: anytype) !void {
-        const info_id = info.id() orelse return error.InfoHasNoId;
+        const info_id = info.id();
         try writer.print("{s}\t{}\t{s}\t{}\t{s}\t{}\t{s}{s}", .{
             @tagName(info.kind),
             info.year,
@@ -194,7 +198,12 @@ pub const Info = struct {
             //       fun when you wonna do custom deserialization.
             debug.assert(stream.token == null);
             stream.token = token;
-            try res.append(allocator, try fromJson(allocator, stream));
+
+            const entry = fromJson(allocator, stream) catch |err| switch (err) {
+                error.InvalidEntry => continue,
+                else => |e| return e,
+            };
+            try res.append(allocator, entry);
         }
 
         try expectJsonToken(stream, .ObjectEnd);
@@ -227,26 +236,17 @@ pub const Info = struct {
             .{ .allocator = fba.allocator(), .allow_trailing_data = true },
         );
 
-        if (entry.sources.len == 0)
-            return error.InvalidEntry;
-
         const image_base = try ImageBase.fromUrl(entry.picture);
-
-        const title = try allocator.dupe(u8, entry.title);
-        errdefer allocator.free(title);
-        const image_path = try allocator.dupe(u8, entry.picture[image_base.url().len..]);
-        errdefer allocator.free(image_path);
-
-        return Info{
+        var info = Info{
             .anidb = getId(.anidb, entry.sources),
             .anilist = getId(.anilist, entry.sources),
             .anisearch = getId(.anisearch, entry.sources),
             .kitsu = getId(.kitsu, entry.sources),
             .livechart = getId(.livechart, entry.sources),
             .myanimelist = getId(.myanimelist, entry.sources),
-            .title = title,
+            .title = undefined,
             .image_base = image_base,
-            .image_path = image_path,
+            .image_path = undefined,
             .kind = switch (entry.type) {
                 .TV => .tv,
                 .MOVIE => .movie,
@@ -265,6 +265,16 @@ pub const Info = struct {
             },
             .episodes = entry.episodes,
         };
+
+        if (info.idChecked() == null)
+            return error.InvalidEntry;
+
+        info.title = try allocator.dupe(u8, entry.title);
+        errdefer allocator.free(info.title);
+        info.image_path = try allocator.dupe(u8, entry.picture[image_base.url().len..]);
+        errdefer allocator.free(info.image_path);
+
+        return info;
     }
 
     pub fn deinit(info: Info, allocator: mem.Allocator) void {

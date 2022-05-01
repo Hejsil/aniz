@@ -283,19 +283,13 @@ fn databaseMain(
         const link_id = anime.Id.fromUrl(link) catch continue;
         const i = database.findWithId(link_id) orelse continue;
         const info = database.get(i);
-        info.writeToDsv(stdout) catch |err| switch (err) {
-            error.InfoHasNoId => continue,
-            else => |e| return e,
-        };
+        try info.writeToDsv(stdout);
         try stdout.writeAll("\n");
     }
 
     if (args.positionals.len == 0) for (database.anidb) |_, i| {
         const info = database.get(i);
-        info.writeToDsv(stdout) catch |err| switch (err) {
-            error.InfoHasNoId => continue,
-            else => |e| return e,
-        };
+        try info.writeToDsv(stdout);
         try stdout.writeAll("\n");
     };
 
@@ -418,7 +412,7 @@ fn manipulateList(
     };
 
     // Always update the entry to have newest link id and title.
-    entry.id = database_entry.id().?;
+    entry.id = database_entry.id();
     entry.title = database_entry.title;
 
     switch (action) {
