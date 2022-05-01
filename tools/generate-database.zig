@@ -35,25 +35,17 @@ pub fn main() !void {
         \\const anime = @import("anime");
         \\const std = @import("std");
         \\
-        \\pub fn StringIndex(comptime first: comptime_int, comptime last: comptime_int) type {
-        \\    const Int = std.math.IntFittingRange(0, last-first);
-        \\    const FullInt = std.math.IntFittingRange(first, last);
-        \\    return enum(Int) {
-        \\        _,
+        \\pub const StringIndex = enum(u32) {
+        \\    _,
         \\
-        \\        pub fn init(value: FullInt) @This() {
-        \\            return @intToEnum(@This(), @intCast(Int, value - first));
-        \\        }
+        \\    pub fn toString(index: @This()) [:0]const u8 {
+        \\        return std.mem.sliceTo(index.toStringZ(), 0);
+        \\    }
         \\
-        \\        pub fn toString(index: @This()) [:0]const u8 {
-        \\            return std.mem.sliceTo(index.toStringZ(), 0);
-        \\        }
-        \\
-        \\        pub fn toStringZ(index: @This()) [*:0]const u8 {
-        \\            return strings[@as(FullInt, @enumToInt(index)) + first..].ptr;
-        \\        }
-        \\    };
-        \\}
+        \\    pub fn toStringZ(index: @This()) [*:0]const u8 {
+        \\        return strings[@enumToInt(index)..].ptr;
+        \\    }
+        \\};
         \\
         \\pub fn get(index: usize) anime.Info {
         \\    return .{
@@ -64,7 +56,7 @@ pub fn main() !void {
         \\        .livechart = livechart[index],
         \\        .myanimelist = myanimelist[index],
         \\        .title = title[index].toString(),
-        \\        .image_base = image_base[index].toString(),
+        \\        .image_base = image_base[index],
         \\        .image_path = image_path[index].toString(),
         \\        .year = year[index],
         \\        .episodes = episodes[index],
@@ -128,27 +120,21 @@ pub fn main() !void {
         );
     }
 
-    const StringFields = enum { title, image_base, image_path };
+    const StringFields = enum { title, image_path };
 
     var string_indexs = std.StringHashMap(usize).init(arena);
     var strings = std.ArrayList(u8).init(arena);
-    inline for ([_]StringFields{ .title, .image_base, .image_path }) |field, i| {
-        const string_index_name = std.fmt.comptimePrint("StringIndex{}", .{i});
+    inline for ([_]StringFields{ .title, .image_path }) |field| {
         try writer.print(
-            \\pub const {s} = blk: {{
-            \\    @setEvalBranchQuota(10000000);
-            \\    break :blk [_]{s}{{
+            \\pub const {s} = [_]StringIndex{{
             \\
-        , .{ @tagName(field), string_index_name });
+        , .{@tagName(field)});
 
         const slice = switch (field) {
             .title => database.items(.title),
-            .image_base => database.items(.image_base),
             .image_path => database.items(.image_path),
         };
 
-        var first: usize = math.maxInt(usize);
-        var last: usize = 0;
         for (slice) |string| {
             const entry = try string_indexs.getOrPut(string);
             if (!entry.found_existing) {
@@ -157,19 +143,13 @@ pub fn main() !void {
                 try strings.append(0);
             }
 
-            try writer.print("        {s}.init({}),\n", .{ string_index_name, entry.value_ptr.* });
-            first = math.min(first, entry.value_ptr.*);
-            last = math.max(last, entry.value_ptr.*);
+            try writer.print("    @intToEnum(StringIndex, {}),\n", .{entry.value_ptr.*});
         }
 
-        try writer.print(
-            \\    }};
-            \\}};
-            \\pub const {s} = StringIndex({}, {});
+        try writer.writeAll(
+            \\};
             \\
             \\
-        ,
-            .{ string_index_name, first, last },
         );
     }
 
@@ -214,6 +194,21 @@ pub fn main() !void {
                 @tagName(seasons[i]),
             });
         }
+        try writer.writeAll(
+            \\};
+            \\
+            \\
+        );
+    }
+
+    {
+        const image_bases = database.items(.image_base);
+        try writer.writeAll(
+            \\pub const image_base = [_]anime.ImageBase{
+            \\
+        );
+        for (image_bases) |image_base|
+            try writer.print("    .{s},\n", .{@tagName(image_base)});
         try writer.writeAll(
             \\};
             \\

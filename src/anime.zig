@@ -58,6 +58,47 @@ pub const Id = struct {
     };
 };
 
+pub const ImageBase = enum {
+    anidb,
+    anilist,
+    animeplanet1,
+    animeplanet2,
+    anisearch,
+    kitsu1,
+    kitsu2,
+    livechart,
+    myanimelist1,
+    myanimelist2,
+    notifymoe,
+
+    pub fn fromUrl(str: []const u8) !ImageBase {
+        inline for (@typeInfo(ImageBase).Enum.fields) |field| {
+            const base = @field(ImageBase, field.name);
+            const base_url = base.url();
+            if (mem.startsWith(u8, str, base_url))
+                return base;
+        }
+
+        return error.InvalidUrl;
+    }
+
+    pub fn url(base: ImageBase) []const u8 {
+        return switch (base) {
+            .livechart => "https://u.livechart.me/anime/",
+            .anilist => "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/",
+            .notifymoe => "https://media.notify.moe/images/anime/large/",
+            .kitsu1 => "https://media.kitsu.io/anime/poster_images/",
+            .kitsu2 => "https://media.kitsu.io/anime/",
+            .myanimelist1 => "https://cdn.myanimelist.net/images/anime/",
+            .myanimelist2 => "https://cdn.myanimelist.net/images/",
+            .anisearch => "https://cdn.anisearch.com/images/anime/cover/full/",
+            .animeplanet1 => "https://cdn.anime-planet.com/images/anime/default/",
+            .animeplanet2 => "https://cdn.anime-planet.com/anime/primary/",
+            .anidb => "https://cdn.anidb.net/images/main/",
+        };
+    }
+};
+
 pub const OptionalId = enum(u32) {
     none = math.maxInt(u32),
     _,
@@ -77,7 +118,7 @@ pub const Info = struct {
     livechart: OptionalId,
     myanimelist: OptionalId,
     title: []const u8,
-    image_base: []const u8,
+    image_base: ImageBase,
     image_path: []const u8,
     year: u16,
     episodes: u16,
@@ -128,7 +169,7 @@ pub const Info = struct {
             info.episodes,
             info.title,
             info_id,
-            info.image_base,
+            info.image_base.url(),
             info.image_path,
         });
     }
@@ -189,29 +230,11 @@ pub const Info = struct {
         if (entry.sources.len == 0)
             return error.InvalidEntry;
 
-        // Keep reverse sorted: sort -r
-        const image_bases = [_][]const u8{
-            "https://u.livechart.me/anime/",
-            "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/",
-            "https://media.notify.moe/images/anime/large/",
-            "https://media.kitsu.io/anime/poster_images/",
-            "https://media.kitsu.io/anime/",
-            "https://cdn.myanimelist.net/images/anime/",
-            "https://cdn.myanimelist.net/images/",
-            "https://cdn.anisearch.com/images/anime/cover/full/",
-            "https://cdn.anime-planet.com/images/anime/default/",
-            "https://cdn.anime-planet.com/anime/primary/",
-            "https://cdn.anidb.net/images/main/",
-        };
-
-        const image_base = for (image_bases) |base| {
-            if (mem.startsWith(u8, entry.picture, base))
-                break base;
-        } else return error.InvalidImageUrl;
+        const image_base = try ImageBase.fromUrl(entry.picture);
 
         const title = try allocator.dupe(u8, entry.title);
         errdefer allocator.free(title);
-        const image_path = try allocator.dupe(u8, entry.picture[image_base.len..]);
+        const image_path = try allocator.dupe(u8, entry.picture[image_base.url().len..]);
         errdefer allocator.free(image_path);
 
         return Info{
