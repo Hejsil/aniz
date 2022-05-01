@@ -58,7 +58,7 @@ pub const Id = struct {
     };
 };
 
-pub const ImageBase = enum {
+pub const ImageBase = enum(u4) {
     anidb,
     anilist,
     animeplanet1,
@@ -125,7 +125,7 @@ pub const Info = struct {
     kind: Kind,
     season: Season,
 
-    pub const Season = enum(u4) {
+    pub const Season = enum(u3) {
         spring,
         summer,
         fall,
@@ -133,7 +133,7 @@ pub const Info = struct {
         undef,
     };
 
-    pub const Kind = enum(u4) {
+    pub const Kind = enum(u3) {
         tv,
         movie,
         ova,
@@ -348,7 +348,7 @@ pub const Entry = struct {
     title: []const u8,
     id: Id,
 
-    pub const Status = enum {
+    pub const Status = enum(u3) {
         complete,
         dropped,
         on_hold,
