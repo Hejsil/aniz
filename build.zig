@@ -7,11 +7,13 @@ pub fn build(b: *Builder) void {
     b.setPreferredReleaseMode(.ReleaseSafe);
     const mode = b.standardReleaseOptions();
     const target = b.standardTargetOptions(.{});
+    const strip = b.option(bool, "strip", "") orelse false;
 
     const generate_database = b.addExecutable("generate-database", "tools/generate-database.zig");
     generate_database.addPackagePath("anime", "src/anime.zig");
     generate_database.setTarget(target);
     generate_database.setBuildMode(mode);
+    generate_database.strip = strip;
     generate_database.install();
 
     const generate_database_step = generate_database.run();
@@ -46,6 +48,8 @@ pub fn build(b: *Builder) void {
     });
     anilist.setTarget(target);
     anilist.setBuildMode(mode);
-    anilist.step.dependOn(&generate_database_step.step);
+    anilist.strip = strip;
     anilist.install();
+
+    anilist.step.dependOn(&generate_database_step.step);
 }
