@@ -36,20 +36,20 @@ pub fn build(b: *Builder) void {
         } },
     };
 
-    const anilist = b.addExecutable("anilist", "src/main.zig");
-    anilist.addPackagePath("clap", "lib/zig-clap/clap.zig");
-    anilist.addPackagePath("datetime", "lib/zig-datetime/src/datetime.zig");
-    anilist.addPackagePath("known_folders", "lib/known-folders/known-folders.zig");
-    anilist.addPackage(anime_pkg);
-    anilist.addPackage(.{
+    const aniz = b.addExecutable("aniz", "src/main.zig");
+    aniz.addPackagePath("clap", "lib/zig-clap/clap.zig");
+    aniz.addPackagePath("datetime", "lib/zig-datetime/src/datetime.zig");
+    aniz.addPackagePath("known_folders", "lib/known-folders/known-folders.zig");
+    aniz.addPackage(anime_pkg);
+    aniz.addPackage(.{
         .name = "database",
         .path = .{ .path = "zig-cache/database.zig" },
         .dependencies = &.{anime_pkg},
     });
-    anilist.setTarget(target);
-    anilist.setBuildMode(mode);
-    anilist.strip = strip;
-    anilist.install();
+    aniz.setTarget(target);
+    aniz.setBuildMode(mode);
+    aniz.strip = strip;
+    aniz.install();
 
-    anilist.step.dependOn(&generate_database_step.step);
+    aniz.step.dependOn(&generate_database_step.step);
 }

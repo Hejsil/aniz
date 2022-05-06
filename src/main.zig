@@ -15,7 +15,7 @@ const meta = std.meta;
 const process = std.process;
 
 const list_name = "list";
-const program_name = "anilist";
+const program_name = "aniz";
 
 pub fn main() !void {
     var gba = std.heap.GeneralPurposeAllocator(.{}){};
@@ -91,7 +91,7 @@ const list_modifying_sub_commands = [_]SubCommand{
     .{ .name = "plan-to-watch", .func = planToWatchMain, .description = "Mark animes as plan to watch." },
     .{ .name = "remove", .func = removeMain, .description = "Remove animes from your list." },
     .{ .name = "update", .func = updateMain, .description = "Update animes information in your list." },
-    .{ .name = "watch-episode", .func = watchEpisodeMain, .description = "Increase the number of episodes watch on animes by one." },
+    .{ .name = "watch-episode", .func = watchEpisodeMain, .description = "Increase the number of episodes watched on animes by one." },
     .{ .name = "watching", .func = watchingMain, .description = "Mark animes as watching." },
 };
 
