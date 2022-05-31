@@ -26,13 +26,13 @@ pub fn build(b: *Builder) void {
 
     const anime_pkg = Pkg{
         .name = "anime",
-        .path = .{ .path = "src/anime.zig" },
+        .source = .{ .path = "src/anime.zig" },
         .dependencies = &.{ .{
             .name = "mecha",
-            .path = .{ .path = "lib/mecha/mecha.zig" },
+            .source = .{ .path = "lib/mecha/mecha.zig" },
         }, .{
             .name = "datetime",
-            .path = .{ .path = "lib/zig-datetime/src/datetime.zig" },
+            .source = .{ .path = "lib/zig-datetime/src/datetime.zig" },
         } },
     };
 
@@ -43,7 +43,7 @@ pub fn build(b: *Builder) void {
     aniz.addPackage(anime_pkg);
     aniz.addPackage(.{
         .name = "database",
-        .path = .{ .path = "zig-cache/database.zig" },
+        .source = .{ .path = "zig-cache/database.zig" },
         .dependencies = &.{anime_pkg},
     });
     aniz.setTarget(target);
