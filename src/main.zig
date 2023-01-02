@@ -45,7 +45,7 @@ pub fn main() !void {
 
 const SubCommand = struct {
     name: []const u8,
-    func: fn (SubCommand, mem.Allocator, *process.ArgIterator) anyerror!void,
+    func: *const fn (SubCommand, mem.Allocator, *process.ArgIterator) anyerror!void,
     description: []const u8,
 
     fn help(sub_command: SubCommand, writer: anytype) !void {
@@ -277,7 +277,8 @@ fn databaseMain(
     if (args.args.help)
         return sub_command.usageOut(&params);
 
-    const stdout = io.bufferedWriter(io.getStdOut().writer()).writer();
+    var stdout_buffered = io.bufferedWriter(io.getStdOut().writer());
+    const stdout = stdout_buffered.writer();
 
     for (args.positionals) |link| {
         const link_id = anime.Id.fromUrl(link) catch continue;
@@ -293,7 +294,7 @@ fn databaseMain(
         try stdout.writeAll("\n");
     };
 
-    try stdout.context.flush();
+    try stdout_buffered.flush();
 }
 
 fn listMain(
@@ -323,7 +324,8 @@ fn listMain(
     var list = try loadList(allocator);
     defer list.deinit();
 
-    const stdout = io.bufferedWriter(io.getStdOut().writer()).writer();
+    var stdout_buffered = io.bufferedWriter(io.getStdOut().writer());
+    const stdout = stdout_buffered.writer();
 
     for (args.positionals) |link| {
         const link_id = anime.Id.fromUrl(link) catch continue;
@@ -337,7 +339,7 @@ fn listMain(
         try stdout.writeAll("\n");
     };
 
-    try stdout.context.flush();
+    try stdout_buffered.flush();
 }
 
 const Action = enum {
@@ -485,9 +487,10 @@ fn saveList(list: anime.List) !void {
     var file = try data_dir.atomicFile(list_name, .{});
     defer file.deinit();
 
-    const writer = io.bufferedWriter(file.file.writer()).writer();
+    var buffered_file = io.bufferedWriter(file.file.writer());
+    const writer = buffered_file.writer();
     try list.writeToDsv(writer);
-    try writer.context.flush();
+    try buffered_file.flush();
     try file.finish();
 }
 

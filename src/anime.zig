@@ -324,7 +324,7 @@ pub const List = struct {
         }.match);
     }
 
-    pub fn find(list: List, ctx: anytype, match: fn (@TypeOf(ctx), Entry) bool) ?*Entry {
+    pub fn find(list: List, ctx: anytype, match: *const fn (@TypeOf(ctx), Entry) bool) ?*Entry {
         for (list.entries.items) |*entry| {
             if (match(ctx, entry.*))
                 return entry;
@@ -435,40 +435,41 @@ pub const Entry = struct {
         });
     }
 
+    const any_token = mecha.many(mecha.ascii.not(mecha.ascii.char('\t')), .{ .collect = false });
+    const minus_token = mecha.ascii.char('-');
+    const status_token = mecha.convert(Status, Status.fromString, any_token);
+    const string_token = mecha.many(mecha.ascii.not(tab_token), .{});
+    const tab_token = mecha.ascii.char('\t');
+    const usize_token = mecha.int(usize, .{ .parse_sign = false });
+
     const dsv = mecha.map(Entry, mecha.toStruct(Entry), mecha.combine(.{
         date,
-        mecha.ascii.char('\t'),
-        status,
-        mecha.ascii.char('\t'),
-        mecha.int(usize, .{ .parse_sign = false }),
-        mecha.ascii.char('\t'),
-        mecha.int(usize, .{ .parse_sign = false }),
-        mecha.ascii.char('\t'),
-        string,
-        mecha.ascii.char('\t'),
+        tab_token,
+        status_token,
+        tab_token,
+        usize_token,
+        tab_token,
+        usize_token,
+        tab_token,
+        string_token,
+        tab_token,
         link,
         mecha.eos,
     }));
 
     const date = mecha.map(datetime.Date, mecha.toStruct(datetime.Date), mecha.combine(.{
         mecha.int(u16, .{ .parse_sign = false }),
-        mecha.ascii.char('-'),
+        minus_token,
         mecha.int(u4, .{ .parse_sign = false }),
-        mecha.ascii.char('-'),
+        minus_token,
         mecha.int(u8, .{ .parse_sign = false }),
     }));
-
-    const status = mecha.convert(Status, Status.fromString, any);
-
-    const string = mecha.many(mecha.ascii.not(mecha.ascii.char('\t')), .{});
 
     const link = mecha.convert(Id, struct {
         fn conv(_: mem.Allocator, in: []const u8) !Id {
             return Id.fromUrl(in);
         }
-    }.conv, any);
-
-    const any = mecha.many(mecha.ascii.not(mecha.ascii.char('\t')), .{ .collect = false });
+    }.conv, any_token);
 };
 
 fn expectJsonToken(stream: *json.TokenStream, id: std.meta.Tag(json.Token)) !void {

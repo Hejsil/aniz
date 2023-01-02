@@ -49,7 +49,6 @@ pub fn build(b: *Builder) void {
     aniz.setTarget(target);
     aniz.setBuildMode(mode);
     aniz.strip = strip;
-    aniz.use_stage1 = true;
     aniz.install();
 
     aniz.step.dependOn(&generate_database_step.step);
