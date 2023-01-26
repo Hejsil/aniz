@@ -4,7 +4,6 @@ const Builder = std.build.Builder;
 const Pkg = std.build.Pkg;
 
 pub fn build(b: *Builder) void {
-    b.setPreferredReleaseMode(.ReleaseSafe);
     const mode = b.standardReleaseOptions();
     const target = b.standardTargetOptions(.{});
     const strip = b.option(bool, "strip", "") orelse false;
