@@ -436,10 +436,10 @@ pub const Entry = struct {
     }
 
     const any_token = mecha.many(mecha.ascii.not(mecha.ascii.char('\t')), .{ .collect = false });
-    const minus_token = mecha.ascii.char('-');
+    const minus_token = mecha.discard(mecha.ascii.char('-'));
     const status_token = mecha.convert(Status, Status.fromString, any_token);
     const string_token = mecha.many(mecha.ascii.not(tab_token), .{});
-    const tab_token = mecha.ascii.char('\t');
+    const tab_token = mecha.discard(mecha.ascii.char('\t'));
     const usize_token = mecha.int(usize, .{ .parse_sign = false });
 
     const dsv = mecha.map(Entry, mecha.toStruct(Entry), mecha.combine(.{
