@@ -288,7 +288,7 @@ fn databaseMain(
         try stdout.writeAll("\n");
     }
 
-    if (args.positionals.len == 0) for (database.anidb) |_, i| {
+    if (args.positionals.len == 0) for (database.anidb, 0..) |_, i| {
         const info = database.get(i);
         try info.writeToDsv(stdout);
         try stdout.writeAll("\n");

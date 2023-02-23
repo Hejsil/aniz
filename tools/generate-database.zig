@@ -74,7 +74,7 @@ pub fn main() !void {
         \\        .livechart => livechart,
         \\        .myanimelist => myanimelist,
         \\    };
-        \\    for (slice_to_search) |id, i| {
+        \\    for (slice_to_search, 0..) |id, i| {
         \\        if (link_id.id == @enumToInt(id))
         \\            return i;
         \\    }
@@ -188,10 +188,10 @@ pub fn main() !void {
             \\pub const season_and_kind = [_]SeasonAndKind{
             \\
         );
-        for (kinds) |_, i| {
+        for (kinds, seasons) |kind, season| {
             try writer.print("    .{{ .kind = .{s}, .season = .{s} }},\n", .{
-                @tagName(kinds[i]),
-                @tagName(seasons[i]),
+                @tagName(kind),
+                @tagName(season),
             });
         }
         try writer.writeAll(

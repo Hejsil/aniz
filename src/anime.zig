@@ -437,12 +437,12 @@ pub const Entry = struct {
 
     const any_token = mecha.many(mecha.ascii.not(mecha.ascii.char('\t')), .{ .collect = false });
     const minus_token = mecha.discard(mecha.ascii.char('-'));
-    const status_token = mecha.convert(Status, Status.fromString, any_token);
+    const status_token = mecha.convert(Status.fromString, any_token);
     const string_token = mecha.many(mecha.ascii.not(tab_token), .{});
     const tab_token = mecha.discard(mecha.ascii.char('\t'));
     const usize_token = mecha.int(usize, .{ .parse_sign = false });
 
-    const dsv = mecha.map(Entry, mecha.toStruct(Entry), mecha.combine(.{
+    const dsv = mecha.map(mecha.toStruct(Entry), mecha.combine(.{
         date,
         tab_token,
         status_token,
@@ -457,7 +457,7 @@ pub const Entry = struct {
         mecha.eos,
     }));
 
-    const date = mecha.map(datetime.Date, mecha.toStruct(datetime.Date), mecha.combine(.{
+    const date = mecha.map(mecha.toStruct(datetime.Date), mecha.combine(.{
         mecha.int(u16, .{ .parse_sign = false }),
         minus_token,
         mecha.int(u4, .{ .parse_sign = false }),
@@ -465,7 +465,7 @@ pub const Entry = struct {
         mecha.int(u8, .{ .parse_sign = false }),
     }));
 
-    const link = mecha.convert(Id, struct {
+    const link = mecha.convert(struct {
         fn conv(_: mem.Allocator, in: []const u8) !Id {
             return Id.fromUrl(in);
         }
