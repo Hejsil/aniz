@@ -274,7 +274,7 @@ fn databaseMain(
     };
     defer args.deinit();
 
-    if (args.args.help)
+    if (args.args.help != 0)
         return sub_command.usageOut(&params);
 
     var stdout_buffered = io.bufferedWriter(io.getStdOut().writer());
@@ -318,7 +318,7 @@ fn listMain(
     };
     defer args.deinit();
 
-    if (args.args.help)
+    if (args.args.help != 0)
         return sub_command.usageOut(&params);
 
     var list = try loadList(allocator);
@@ -375,7 +375,7 @@ fn listManipulateMain(
     };
     defer args.deinit();
 
-    if (args.args.help)
+    if (args.args.help != 0)
         return sub_command.usageOut(&params);
 
     var list = try loadList(allocator);

@@ -124,7 +124,7 @@ pub fn main() !void {
 
     var string_indexs = std.StringHashMap(usize).init(arena);
     var strings = std.ArrayList(u8).init(arena);
-    inline for ([_]StringFields{ .title, .image_path }) |field| {
+    for (std.meta.tags(StringFields)) |field| {
         try writer.print(
             \\pub const {s} = [_]StringIndex{{
             \\
@@ -160,7 +160,7 @@ pub fn main() !void {
     , .{std.zig.fmtEscapes(strings.items)});
 
     const IntFields = enum { year, episodes };
-    inline for ([_]IntFields{ .year, .episodes }) |field| {
+    for (std.meta.tags(IntFields)) |field| {
         try writer.print(
             \\pub const {s} = [_]u16{{
             \\
@@ -204,7 +204,7 @@ pub fn main() !void {
     {
         const image_bases = database.items(.image_base);
         try writer.writeAll(
-            \\pub const image_base = [_]anime.ImageBase{
+            \\pub const image_base = [_]anime.Image.Base{
             \\
         );
         for (image_bases) |image_base|

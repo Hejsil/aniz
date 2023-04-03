@@ -14,8 +14,7 @@ pub const Id = struct {
     id: u32,
 
     pub fn fromUrl(url: []const u8) !Id {
-        inline for (@typeInfo(Site).Enum.fields) |field| {
-            const site = @field(Site, field.name);
+        for (std.meta.tags(Site)) |site| {
             const site_url = site.url();
             if (mem.startsWith(u8, url, site_url)) {
                 const id = try std.fmt.parseUnsigned(u32, url[site_url.len..], 10);
@@ -58,47 +57,63 @@ pub const Id = struct {
     };
 };
 
-pub const ImageBase = enum(u4) {
-    anidb,
-    anilist,
-    animeplanet1,
-    animeplanet2,
-    anisearch1,
-    anisearch2,
-    kitsu1,
-    kitsu2,
-    livechart,
-    myanimelist1,
-    myanimelist2,
-    notifymoe,
+pub const Image = struct {
+    base: Base,
+    path: []const u8,
 
-    pub fn fromUrl(str: []const u8) !ImageBase {
-        inline for (@typeInfo(ImageBase).Enum.fields) |field| {
-            const base = @field(ImageBase, field.name);
-            const base_url = base.url();
-            if (mem.startsWith(u8, str, base_url))
-                return base;
+    pub fn format(
+        image: Image,
+        comptime f: []const u8,
+        options: fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = f;
+        _ = options;
+        return writer.print("{s}{s}", .{ image.base.url(), image.path });
+    }
+
+    pub const Base = enum(u4) {
+        anidb,
+        anilist,
+        animeplanet1,
+        animeplanet2,
+        anisearch1,
+        anisearch2,
+        kitsu1,
+        kitsu2,
+        livechart,
+        myanimelist1,
+        myanimelist2,
+        notifymoe,
+
+        pub fn fromUrl(str: []const u8) !Image.Base {
+            inline for (@typeInfo(Image.Base).Enum.fields) |field| {
+                const base = @field(Image.Base, field.name);
+                const base_url = base.url();
+                if (mem.startsWith(u8, str, base_url))
+                    return base;
+            }
+
+            return error.InvalidUrl;
         }
 
-        return error.InvalidUrl;
-    }
-
-    pub fn url(base: ImageBase) []const u8 {
-        return switch (base) {
-            .livechart => "https://u.livechart.me/anime/",
-            .anilist => "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/",
-            .notifymoe => "https://media.notify.moe/images/anime/large/",
-            .kitsu1 => "https://media.kitsu.io/anime/poster_images/",
-            .kitsu2 => "https://media.kitsu.io/anime/",
-            .myanimelist1 => "https://cdn.myanimelist.net/images/anime/",
-            .myanimelist2 => "https://cdn.myanimelist.net/images/",
-            .anisearch1 => "https://cdn.anisearch.com/images/anime/cover/full/",
-            .anisearch2 => "https://www.anisearch.com/images/anime/cover/",
-            .animeplanet1 => "https://cdn.anime-planet.com/images/anime/default/",
-            .animeplanet2 => "https://cdn.anime-planet.com/anime/primary/",
-            .anidb => "https://cdn.anidb.net/images/main/",
-        };
-    }
+        pub fn url(base: Image.Base) []const u8 {
+            return switch (base) {
+                .livechart => "https://u.livechart.me/anime/",
+                .anilist => "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/",
+                .notifymoe => "https://media.notify.moe/images/anime/large/",
+                .kitsu1 => "https://media.kitsu.io/anime/poster_images/",
+                .kitsu2 => "https://media.kitsu.io/anime/",
+                .myanimelist1 => "https://cdn.myanimelist.net/images/anime/",
+                .myanimelist2 => "https://cdn.myanimelist.net/images/",
+                .anisearch1 => "https://cdn.anisearch.com/images/anime/cover/full/",
+                .anisearch2 => "https://www.anisearch.com/images/anime/cover/",
+                .animeplanet1 => "https://cdn.anime-planet.com/images/anime/default/",
+                .animeplanet2 => "https://cdn.anime-planet.com/anime/primary/",
+                .anidb => "https://cdn.anidb.net/images/main/",
+            };
+        }
+    };
 };
 
 pub const OptionalId = enum(u32) {
@@ -120,7 +135,7 @@ pub const Info = struct {
     livechart: OptionalId,
     myanimelist: OptionalId,
     title: []const u8,
-    image_base: ImageBase,
+    image_base: Image.Base,
     image_path: []const u8,
     year: u16,
     episodes: u16,
@@ -166,17 +181,20 @@ pub const Info = struct {
         return .none;
     }
 
+    pub fn image(info: Info) Image {
+        return .{ .base = info.image_base, .path = info.image_path };
+    }
+
     pub fn writeToDsv(info: Info, writer: anytype) !void {
         const info_id = info.id();
-        try writer.print("{s}\t{}\t{s}\t{}\t{s}\t{}\t{s}{s}", .{
+        try writer.print("{s}\t{}\t{s}\t{}\t{s}\t{}\t{}", .{
             @tagName(info.kind),
             info.year,
             @tagName(info.season),
             info.episodes,
             info.title,
             info_id,
-            info.image_base.url(),
-            info.image_path,
+            info.image(),
         });
     }
 
@@ -238,7 +256,7 @@ pub const Info = struct {
             .{ .allocator = fba.allocator(), .allow_trailing_data = true },
         );
 
-        const image_base = try ImageBase.fromUrl(entry.picture);
+        const image_base = try Image.Base.fromUrl(entry.picture);
         var info = Info{
             .anidb = getId(.anidb, entry.sources),
             .anilist = getId(.anilist, entry.sources),
