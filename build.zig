@@ -39,7 +39,6 @@ pub fn build(b: *Builder) void {
         .target = target,
         .optimize = optimize,
     });
-    const install_generate_database = b.addInstallArtifact(generate_database);
     const run_generate_database = b.addRunArtifact(generate_database);
 
     generate_database.addModule("anime", anime_module);
@@ -58,7 +57,6 @@ pub fn build(b: *Builder) void {
         .target = target,
         .optimize = optimize,
     });
-    const install_aniz = b.addInstallArtifact(aniz);
 
     aniz.addModule("clap", clap_module);
     aniz.addModule("datetime", datetime_module);
@@ -68,6 +66,6 @@ pub fn build(b: *Builder) void {
     aniz.strip = strip;
 
     aniz.step.dependOn(&run_generate_database.step);
-    b.default_step.dependOn(&install_generate_database.step);
-    b.default_step.dependOn(&install_aniz.step);
+    b.installArtifact(generate_database);
+    b.installArtifact(aniz);
 }
