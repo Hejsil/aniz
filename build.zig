@@ -39,12 +39,13 @@ pub fn build(b: *Builder) void {
         .target = target,
         .optimize = optimize,
     });
+    const install_generate_database = b.addInstallArtifact(generate_database);
+    const run_generate_database = b.addRunArtifact(generate_database);
+
     generate_database.addModule("anime", anime_module);
     generate_database.strip = strip;
-    generate_database.install();
 
-    const generate_database_step = generate_database.run();
-    generate_database_step.addArgs(
+    run_generate_database.addArgs(
         &.{
             "lib/anime-offline-database/anime-offline-database.json",
             "zig-cache/database.zig",
@@ -57,13 +58,16 @@ pub fn build(b: *Builder) void {
         .target = target,
         .optimize = optimize,
     });
+    const install_aniz = b.addInstallArtifact(aniz);
+
     aniz.addModule("clap", clap_module);
     aniz.addModule("datetime", datetime_module);
     aniz.addModule("known_folders", folders_module);
     aniz.addModule("anime", anime_module);
     aniz.addModule("database", database_module);
     aniz.strip = strip;
-    aniz.install();
 
-    aniz.step.dependOn(&generate_database_step.step);
+    aniz.step.dependOn(&run_generate_database.step);
+    b.default_step.dependOn(&install_generate_database.step);
+    b.default_step.dependOn(&install_aniz.step);
 }
