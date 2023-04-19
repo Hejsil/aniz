@@ -23,8 +23,8 @@ pub fn main() !void {
         math.maxInt(usize),
     );
 
-    var stream = json.TokenStream.init(database_json);
-    const database = try anime.Info.fromJsonList(&stream, arena);
+    var tokens = json.TokenStream.init(database_json);
+    const database = try json.parse(Database, &tokens, .{ .allocator = arena });
 
     const out_file = try fs.cwd().createFile(out, .{});
     defer out_file.close();
@@ -47,7 +47,7 @@ pub fn main() !void {
         \\    }
         \\};
         \\
-        \\pub fn get(index: usize) anime.Info {
+        \\pub fn info(index: usize) anime.Info {
         \\    return .{
         \\        .anidb = anidb[index],
         \\        .anilist = anilist[index],
@@ -63,6 +63,10 @@ pub fn main() !void {
         \\        .kind = season_and_kind[index].kind,
         \\        .season = season_and_kind[index].season,
         \\    };
+        \\}
+        \\
+        \\pub fn synonyms(index: usize) []const StringIndex {
+        \\    return synonyms_flatten[synonym_indexs[index]..][0..synonym_lengths[index]];
         \\}
         \\
         \\pub fn findWithId(link_id: anime.Id) ?usize {
@@ -90,24 +94,31 @@ pub fn main() !void {
         \\
     );
 
+    var database_entries = std.ArrayList(Entry).init(arena);
+    try database_entries.ensureUnusedCapacity(database.data.len);
+
+    // Create a list of only valid database entries
+    for (database.data) |entry| {
+        for (entry.sources) |source| {
+            _ = anime.Id.fromUrl(source) catch continue;
+            database_entries.appendAssumeCapacity(entry);
+            break;
+        }
+    }
+
     inline for (@typeInfo(anime.Id.Site).Enum.fields) |field| {
         try writer.print(
             \\pub const {s} = [_]anime.OptionalId{{
             \\
         , .{field.name});
 
-        const slice = switch (@field(anime.Id.Site, field.name)) {
-            .anidb => database.items(.anidb),
-            .anilist => database.items(.anilist),
-            .anisearch => database.items(.anisearch),
-            .kitsu => database.items(.kitsu),
-            .livechart => database.items(.livechart),
-            .myanimelist => database.items(.myanimelist),
-        };
-
-        for (slice) |opt_id| {
-            if (opt_id.unwrap()) |id| {
-                try writer.print("    @intToEnum(anime.OptionalId, {}),\n", .{id});
+        for (database_entries.items) |entry| {
+            for (entry.sources) |source| {
+                const id = anime.Id.fromUrl(source) catch continue;
+                if (id.site == @field(anime.Id.Site, field.name)) {
+                    try writer.print("    @intToEnum(anime.OptionalId, {}),\n", .{id.id});
+                    break;
+                }
             } else {
                 try writer.writeAll("    .none,\n");
             }
@@ -126,16 +137,18 @@ pub fn main() !void {
     var strings = std.ArrayList(u8).init(arena);
     for (std.meta.tags(StringFields)) |field| {
         try writer.print(
-            \\pub const {s} = [_]StringIndex{{
+            \\pub const {s} = [_]StringIndex {{
             \\
         , .{@tagName(field)});
 
-        const slice = switch (field) {
-            .title => database.items(.title),
-            .image_path => database.items(.image_path),
-        };
-
-        for (slice) |string| {
+        for (database_entries.items) |database_entry| {
+            const string = switch (field) {
+                .title => database_entry.title,
+                .image_path => blk: {
+                    const image_base = try anime.Image.Base.fromUrl(database_entry.picture);
+                    break :blk database_entry.picture[image_base.url().len..];
+                },
+            };
             const entry = try string_indexs.getOrPut(string);
             if (!entry.found_existing) {
                 entry.value_ptr.* = strings.items.len;
@@ -153,6 +166,63 @@ pub fn main() !void {
         );
     }
 
+    // Store synonyms compactly. We have on flat array with all synonyms. Then we have two other
+    // arrays. One for indexs into the flat array and one for lengths. If one wants to access
+    // the synonyms of an entry they have to do:
+    // `synonyms_flatten[synonym_indexs[entry]..][0..synonym_lengths[entry]]`
+    //
+    // This saves about 3MB of binary size last time i measured.
+    var synonyms = std.ArrayList(struct { index: usize, len: usize }).init(arena);
+    try synonyms.ensureUnusedCapacity(database_entries.items.len);
+
+    try writer.writeAll(
+        \\const synonyms_flatten = [_]StringIndex {
+        \\
+    );
+    var index: usize = 0;
+    for (database_entries.items) |database_entry| {
+        synonyms.appendAssumeCapacity(.{ .index = index, .len = database_entry.synonyms.len });
+        index += database_entry.synonyms.len;
+
+        for (database_entry.synonyms) |string| {
+            const entry = try string_indexs.getOrPut(string);
+            if (!entry.found_existing) {
+                entry.value_ptr.* = strings.items.len;
+                try strings.appendSlice(string);
+                try strings.append(0);
+            }
+            try writer.print("    @intToEnum(StringIndex, {}),\n", .{entry.value_ptr.*});
+        }
+    }
+    try writer.writeAll(
+        \\};
+        \\
+        \\
+    );
+
+    try writer.writeAll(
+        \\const synonym_indexs = [_]u32 {
+        \\
+    );
+    for (synonyms.items) |synonym|
+        try writer.print("    {},\n", .{synonym.index});
+    try writer.writeAll(
+        \\};
+        \\
+        \\
+    );
+    try writer.writeAll(
+        \\const synonym_lengths = [_]u8 {
+        \\
+    );
+    for (synonyms.items) |synonym|
+        try writer.print("    {},\n", .{synonym.len});
+    try writer.writeAll(
+        \\};
+        \\
+        \\
+    );
+
     try writer.print(
         \\pub const strings = "{}";
         \\
@@ -166,34 +236,13 @@ pub fn main() !void {
             \\
         , .{@tagName(field)});
 
-        const slice = switch (field) {
-            .year => database.items(.year),
-            .episodes => database.items(.episodes),
-        };
-
-        for (slice) |int|
-            try writer.print("    {},\n", .{int});
-
-        try writer.writeAll(
-            \\};
-            \\
-            \\
-        );
-    }
-
-    {
-        const kinds = database.items(.kind);
-        const seasons = database.items(.season);
-        try writer.writeAll(
-            \\pub const season_and_kind = [_]SeasonAndKind{
-            \\
-        );
-        for (kinds, seasons) |kind, season| {
-            try writer.print("    .{{ .kind = .{s}, .season = .{s} }},\n", .{
-                @tagName(kind),
-                @tagName(season),
-            });
+        for (database_entries.items) |entry| {
+            try writer.print("    {},\n", .{switch (field) {
+                .year => entry.animeSeason.year orelse 0,
+                .episodes => entry.episodes,
+            }});
         }
+
         try writer.writeAll(
             \\};
             \\
@@ -201,20 +250,103 @@ pub fn main() !void {
         );
     }
 
-    {
-        const image_bases = database.items(.image_base);
-        try writer.writeAll(
-            \\pub const image_base = [_]anime.Image.Base{
-            \\
-        );
-        for (image_bases) |image_base|
-            try writer.print("    .{s},\n", .{@tagName(image_base)});
-        try writer.writeAll(
-            \\};
-            \\
-            \\
-        );
+    try writer.writeAll(
+        \\pub const season_and_kind = [_]SeasonAndKind{
+        \\
+    );
+    for (database_entries.items) |entry| {
+        const kind: anime.Info.Kind = switch (entry.type) {
+            .TV => .tv,
+            .MOVIE => .movie,
+            .OVA => .ova,
+            .ONA => .ona,
+            .SPECIAL => .special,
+            .UNKNOWN => .unknown,
+        };
+        const season: anime.Info.Season = switch (entry.animeSeason.season) {
+            .SPRING => .spring,
+            .SUMMER => .summer,
+            .FALL => .fall,
+            .WINTER => .winter,
+            .UNDEFINED => .undef,
+        };
+        try writer.print("    .{{ .kind = .{s}, .season = .{s} }},\n", .{
+            @tagName(kind),
+            @tagName(season),
+        });
     }
+    try writer.writeAll(
+        \\};
+        \\
+        \\
+    );
+
+    try writer.writeAll(
+        \\pub const image_base = [_]anime.Image.Base{
+        \\
+    );
+
+    for (database_entries.items) |database_entry| {
+        const image_base = try anime.Image.Base.fromUrl(database_entry.picture);
+        try writer.print("    .{s},\n", .{@tagName(image_base)});
+    }
+
+    try writer.writeAll(
+        \\};
+        \\
+        \\
+    );
 
     try buffered_stdout.flush();
 }
+
+const Database = struct {
+    license: struct {
+        name: []const u8,
+        url: []const u8,
+    },
+    repository: []const u8,
+    lastUpdate: []const u8,
+    data: []const Entry,
+};
+
+const Entry = struct {
+    sources: []const []const u8,
+    title: []const u8,
+    type: Type,
+    episodes: u16,
+    status: Status,
+    animeSeason: struct {
+        season: Season,
+        year: ?u16,
+    },
+    picture: []const u8,
+    thumbnail: []const u8,
+    synonyms: []const []const u8,
+    relations: []const []const u8,
+    tags: []const []const u8,
+};
+
+const Type = enum {
+    TV,
+    MOVIE,
+    OVA,
+    ONA,
+    SPECIAL,
+    UNKNOWN,
+};
+
+const Status = enum {
+    FINISHED,
+    ONGOING,
+    UPCOMING,
+    UNKNOWN,
+};
+
+const Season = enum {
+    SPRING,
+    SUMMER,
+    FALL,
+    WINTER,
+    UNDEFINED,
+};

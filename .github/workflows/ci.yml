@@ -7,6 +7,10 @@ on:
 
 jobs:
   test:
+    strategy:
+      matrix:
+        step: [install, test]
+        optimize: [Debug, ReleaseSafe, ReleaseSmall, ReleaseFast]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -15,7 +19,7 @@ jobs:
       - uses: goto-bus-stop/setup-zig@v2.0.1
         with:
           version: master
-      - run: zig build
+      - run: zig build ${{matrix.step}} -Doptimize=${{ matrix.optimize}}
   lint:
     runs-on: ubuntu-latest
     steps:

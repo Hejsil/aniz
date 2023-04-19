@@ -198,105 +198,6 @@ pub const Info = struct {
         });
     }
 
-    pub fn fromJsonList(stream: *json.TokenStream, allocator: mem.Allocator) !std.MultiArrayList(Info) {
-        try expectJsonToken(stream, .ObjectBegin);
-        try skipToField(stream, "data");
-        try expectJsonToken(stream, .ArrayBegin);
-
-        var res = std.MultiArrayList(Info){};
-        errdefer res.deinit(allocator);
-
-        while (true) {
-            const token = (try stream.next()) orelse return error.UnexpectEndOfStream;
-            if (token == .ArrayEnd)
-                break;
-
-            // HACK: Put back token. This code is actually not correct. The reason
-            //       the token field exists in TokenStream is for cases when the
-            //       StreamingParser generates two tokens. If we hit that case, then
-            //       we're trying to throw away a token here. Jees this api is not
-            //       fun when you wonna do custom deserialization.
-            debug.assert(stream.token == null);
-            stream.token = token;
-
-            const entry = fromJson(allocator, stream) catch |err| switch (err) {
-                error.InvalidEntry => continue,
-                else => |e| return e,
-            };
-            try res.append(allocator, entry);
-        }
-
-        try expectJsonToken(stream, .ObjectEnd);
-        return res;
-    }
-
-    pub fn fromJson(allocator: mem.Allocator, stream: *json.TokenStream) !Info {
-        var buf: [std.mem.page_size * 20]u8 = undefined;
-        var fba = heap.FixedBufferAllocator.init(&buf);
-
-        @setEvalBranchQuota(100000000);
-        const entry = try json.parse(
-            struct {
-                sources: []const []const u8,
-                title: []const u8,
-                type: enum { TV, MOVIE, OVA, ONA, SPECIAL, UNKNOWN },
-                episodes: u16,
-                status: []const u8,
-                animeSeason: struct {
-                    season: enum { SPRING, SUMMER, FALL, WINTER, UNDEFINED },
-                    year: ?u16,
-                },
-                picture: []const u8,
-                thumbnail: []const u8,
-                synonyms: []const []const u8,
-                relations: []const []const u8,
-                tags: []const []const u8,
-            },
-            stream,
-            .{ .allocator = fba.allocator(), .allow_trailing_data = true },
-        );
-
-        const image_base = try Image.Base.fromUrl(entry.picture);
-        var info = Info{
-            .anidb = getId(.anidb, entry.sources),
-            .anilist = getId(.anilist, entry.sources),
-            .anisearch = getId(.anisearch, entry.sources),
-            .kitsu = getId(.kitsu, entry.sources),
-            .livechart = getId(.livechart, entry.sources),
-            .myanimelist = getId(.myanimelist, entry.sources),
-            .title = undefined,
-            .image_base = image_base,
-            .image_path = undefined,
-            .kind = switch (entry.type) {
-                .TV => .tv,
-                .MOVIE => .movie,
-                .OVA => .ova,
-                .ONA => .ona,
-                .SPECIAL => .special,
-                .UNKNOWN => .unknown,
-            },
-            .year = entry.animeSeason.year orelse 0,
-            .season = switch (entry.animeSeason.season) {
-                .SPRING => .spring,
-                .SUMMER => .summer,
-                .FALL => .fall,
-                .WINTER => .winter,
-                .UNDEFINED => .undef,
-            },
-            .episodes = entry.episodes,
-        };
-
-        if (info.idChecked() == null)
-            return error.InvalidEntry;
-
-        info.title = try allocator.dupe(u8, entry.title);
-        errdefer allocator.free(info.title);
-        info.image_path = try allocator.dupe(u8, entry.picture[image_base.url().len..]);
-        errdefer allocator.free(info.image_path);
-
-        return info;
-    }
-
     pub fn deinit(info: Info, allocator: mem.Allocator) void {
         allocator.free(info.title);
         allocator.free(info.image);
@@ -307,7 +208,6 @@ pub const List = struct {
     arena: heap.ArenaAllocator,
     entries: std.ArrayListUnmanaged(Entry),
 
-    // Omg, stop making the deinit function take a mutable pointer plz...
     pub fn deinit(list: *List) void {
         list.entries.deinit(list.arena.child_allocator);
         list.arena.deinit();
@@ -489,27 +389,3 @@ pub const Entry = struct {
         }
     }.conv, any_token);
 };
-
-fn expectJsonToken(stream: *json.TokenStream, id: std.meta.Tag(json.Token)) !void {
-    const token = (try stream.next()) orelse return error.UnexpectEndOfStream;
-    if (token != id)
-        return error.UnexpectJsonToken;
-}
-
-fn skipToField(stream: *json.TokenStream, field: []const u8) !void {
-    var level: usize = 0;
-    while (try stream.next()) |token| switch (token) {
-        .ObjectBegin => level += 1,
-        .ObjectEnd => level = try math.sub(usize, level, 1),
-        .String => |string_token| if (level == 0) {
-            // TODO: Man, I really wanted to use `json.encodesTo` but the Zig standard library
-            //       said "No fun allowed" so I'll have to make do with `mem.eql` even though
-            //       that is the wrong api for this task...
-            if (mem.eql(u8, field, string_token.slice(stream.slice, stream.i - 1)))
-                return;
-        },
-        else => {},
-    };
-
-    return error.EndOfStream;
-}

@@ -51,6 +51,16 @@ pub fn build(b: *Builder) void {
         },
     );
 
+    const test_step = b.step("test", "Run all tests in all modes.");
+    const tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const run_tests = b.addRunArtifact(tests);
+    tests.step.dependOn(&run_generate_database.step);
+    test_step.dependOn(&run_tests.step);
+
     const aniz = b.addExecutable(.{
         .name = "aniz",
         .root_source_file = .{ .path = "src/main.zig" },

@@ -35,8 +35,16 @@ pub fn main() !void {
         &other_sub_commands,
     }) |sub_commands| {
         for (sub_commands) |sub_command| {
-            if (mem.eql(u8, command_str, sub_command.name))
-                return sub_command.func(sub_command, allocator, &args_iter);
+            if (mem.eql(u8, command_str, sub_command.name)) {
+                sub_command.func(sub_command, allocator, &args_iter) catch |err| switch (err) {
+                    // BrokenPipe is in most cases expected. It will be triggered just by doing
+                    // `aniz database | head -n1`. It is not an error for our program so let's
+                    // ignore it and exit cleanly.
+                    error.BrokenPipe => {},
+                    else => return err,
+                };
+                return;
+            }
         }
     }
 
@@ -107,7 +115,10 @@ const help_sub_command = SubCommand{
 };
 const other_sub_commands = [_]SubCommand{help_sub_command};
 
-const clap_parsers = .{ .anime = clap.parsers.string };
+const clap_parsers = .{
+    .anime = clap.parsers.string,
+    .str = clap.parsers.string,
+};
 
 fn helpMain(
     _: SubCommand,
@@ -260,7 +271,8 @@ fn databaseMain(
     args_iter: *std.process.ArgIterator,
 ) anyerror!void {
     const params = comptime clap.parseParamsComptime(
-        \\-h, --help  Print this help message and exit
+        \\-h, --help          Print this help message and exit
+        \\-s, --search <str>  Only print entries that matches a search
         \\<anime>...
     );
 
@@ -277,19 +289,31 @@ fn databaseMain(
     if (args.args.help != 0)
         return sub_command.usageOut(&params);
 
+    const m_search = args.args.search;
+
     var stdout_buffered = io.bufferedWriter(io.getStdOut().writer());
     const stdout = stdout_buffered.writer();
 
     for (args.positionals) |link| {
         const link_id = anime.Id.fromUrl(link) catch continue;
         const i = database.findWithId(link_id) orelse continue;
-        const info = database.get(i);
+        if (m_search) |search| {
+            if (!infoMatch(search, i))
+                continue;
+        }
+
+        const info = database.info(i);
         try info.writeToDsv(stdout);
         try stdout.writeAll("\n");
     }
 
     if (args.positionals.len == 0) for (database.anidb, 0..) |_, i| {
-        const info = database.get(i);
+        if (m_search) |search| {
+            if (!infoMatch(search, i))
+                continue;
+        }
+
+        const info = database.info(i);
         try info.writeToDsv(stdout);
         try stdout.writeAll("\n");
     };
@@ -304,6 +328,7 @@ fn listMain(
 ) anyerror!void {
     const params = comptime clap.parseParamsComptime(
         \\-h, --help  Print this help message and exit
+        \\-s, --search <str>  Only print entries that matches a search
         \\<anime>...
         \\
     );
@@ -321,6 +346,8 @@ fn listMain(
     if (args.args.help != 0)
         return sub_command.usageOut(&params);
 
+    const m_search = args.args.search;
+
     var list = try loadList(allocator);
     defer list.deinit();
 
@@ -330,11 +357,23 @@ fn listMain(
     for (args.positionals) |link| {
         const link_id = anime.Id.fromUrl(link) catch continue;
         const entry = list.findWithId(link_id) orelse continue;
+        if (m_search) |search| {
+            const i = database.findWithId(link_id) orelse continue;
+            if (!infoMatch(search, i))
+                continue;
+        }
+
         try entry.writeToDsv(stdout);
         try stdout.writeAll("\n");
     }
 
     if (args.positionals.len == 0) for (list.entries.items) |entry| {
+        if (m_search) |search| {
+            const i = database.findWithId(entry.id) orelse continue;
+            if (!infoMatch(search, i))
+                continue;
+        }
+
         try entry.writeToDsv(stdout);
         try stdout.writeAll("\n");
     };
@@ -399,7 +438,7 @@ fn manipulateList(
         return error.NoSuchAnime;
     };
 
-    const database_entry = database.get(i);
+    const database_entry = database.info(i);
     const entry = list.findWithId(link_id) orelse blk: {
         const entry = try list.entries.addOne(allocator);
         entry.* = .{
@@ -510,4 +549,37 @@ fn makeAndOpenDir(dir: fs.Dir, sub_path: []const u8) !fs.Dir {
         else => |new_err| return new_err,
     };
     return dir.openDir(sub_path, .{});
+}
+
+fn infoMatch(pattern: []const u8, info_index: usize) bool {
+    if (match(pattern, database.title[info_index].toString()))
+        return true;
+
+    for (database.synonyms(info_index)) |synonym| {
+        if (match(pattern, synonym.toString()))
+            return true;
+    }
+
+    return false;
+}
+
+fn match(pattern: []const u8, str: []const u8) bool {
+    var i: usize = 0;
+    for (pattern) |c| {
+        while (i < str.len) : (i += 1) {
+            if (std.ascii.toLower(c) == std.ascii.toLower(str[i]))
+                break;
+        } else return false;
+    }
+
+    return true;
+}
+
+test "match" {
+    try std.testing.expect(!match("abc", "ab"));
+    try std.testing.expect(match("abc", "abc"));
+    try std.testing.expect(match("abc", "abac"));
+    try std.testing.expect(match("AbC", "abac"));
+    try std.testing.expect(match("attack titan", "Attack On Titan"));
+    try std.testing.expect(!match("attack tatan", "Attack On Titan"));
 }
