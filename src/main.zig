@@ -525,30 +525,28 @@ fn manipulateList(
         },
         .drop => {
             entry.date = datetime.Date.now();
-            entry.watched = 0;
             entry.status = .dropped;
         },
         .on_hold => {
             entry.date = datetime.Date.now();
-            entry.watched = 0;
             entry.status = .on_hold;
         },
         .plan_to_watch => {
             entry.date = datetime.Date.now();
-            entry.watched = 0;
             entry.status = .plan_to_watch;
         },
         .watching => {
             entry.date = datetime.Date.now();
-            entry.watched = 0;
             entry.status = .watching;
         },
-        .watch_episode => {
+        .watch_episode => if (entry.episodes < database_entry.episodes) {
             entry.date = datetime.Date.now();
-            entry.episodes = math.min(
-                database_entry.episodes,
-                entry.episodes + 1,
-            );
+            entry.episodes += 1;
+            entry.status = .watching;
+            if (entry.episodes == database_entry.episodes) {
+                entry.status = .complete;
+                entry.watched += 1;
+            }
         },
         .remove => {
             const index = (@ptrToInt(entry) - @ptrToInt(list.entries.items.ptr)) /
