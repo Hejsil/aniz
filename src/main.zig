@@ -291,6 +291,16 @@ fn databaseMain(
 
     const m_search = args.args.search;
 
+    var entries_to_print = std.ArrayList(usize).init(allocator);
+    defer entries_to_print.deinit();
+    var scores = std.ArrayList(usize).init(allocator);
+    defer scores.deinit();
+
+    const max_to_print = if (args.positionals.len == 0) database.anidb.len else args.positionals.len;
+    try entries_to_print.ensureUnusedCapacity(max_to_print);
+    if (m_search) |_|
+        try scores.ensureUnusedCapacity(max_to_print);
+
     var stdout_buffered = io.bufferedWriter(io.getStdOut().writer());
     const stdout = stdout_buffered.writer();
 
@@ -298,26 +308,38 @@ fn databaseMain(
         const link_id = anime.Id.fromUrl(link) catch continue;
         const i = database.findWithId(link_id) orelse continue;
         if (m_search) |search| {
-            if (!infoMatch(search, i))
+            const score = infoScoredMatch(search, i);
+            if (score == math.maxInt(usize))
                 continue;
-        }
 
-        const info = database.info(i);
-        try info.writeToDsv(stdout);
-        try stdout.writeAll("\n");
+            scores.appendAssumeCapacity(score);
+        }
+        entries_to_print.appendAssumeCapacity(i);
     }
 
     if (args.positionals.len == 0) for (database.anidb, 0..) |_, i| {
         if (m_search) |search| {
-            if (!infoMatch(search, i))
+            const score = infoScoredMatch(search, i);
+            if (score == math.maxInt(usize))
                 continue;
-        }
 
-        const info = database.info(i);
-        try info.writeToDsv(stdout);
-        try stdout.writeAll("\n");
+            scores.appendAssumeCapacity(score);
+        }
+        entries_to_print.appendAssumeCapacity(i);
     };
 
+    if (m_search) |_| {
+        std.sort.sortContext(entries_to_print.items.len, SortContext{
+            .entries = entries_to_print.items,
+            .scores = scores.items,
+        });
+    }
+
+    for (entries_to_print.items) |entry| {
+        const info = database.info(entry);
+        try info.writeToDsv(stdout);
+        try stdout.writeAll("\n");
+    }
     try stdout_buffered.flush();
 }
 
@@ -346,40 +368,78 @@ fn listMain(
     if (args.args.help != 0)
         return sub_command.usageOut(&params);
 
-    const m_search = args.args.search;
-
     var list = try loadList(allocator);
     defer list.deinit();
+
+    const m_search = args.args.search;
+
+    var entries_to_print = std.ArrayList(usize).init(allocator);
+    defer entries_to_print.deinit();
+    var scores = std.ArrayList(usize).init(allocator);
+    defer scores.deinit();
+
+    const max_to_print = if (args.positionals.len == 0) database.anidb.len else args.positionals.len;
+    try entries_to_print.ensureUnusedCapacity(max_to_print);
+    if (m_search) |_|
+        try scores.ensureUnusedCapacity(max_to_print);
 
     var stdout_buffered = io.bufferedWriter(io.getStdOut().writer());
     const stdout = stdout_buffered.writer();
 
     for (args.positionals) |link| {
         const link_id = anime.Id.fromUrl(link) catch continue;
-        const entry = list.findWithId(link_id) orelse continue;
+        const entry_i = list.findIndexWithId(link_id) orelse continue;
         if (m_search) |search| {
-            const i = database.findWithId(link_id) orelse continue;
-            if (!infoMatch(search, i))
+            const database_i = database.findWithId(list.entries.items[entry_i].id) orelse continue;
+            const score = infoScoredMatch(search, database_i);
+            if (score == math.maxInt(usize))
                 continue;
-        }
 
+            scores.appendAssumeCapacity(score);
+        }
+        entries_to_print.appendAssumeCapacity(entry_i);
+    }
+
+    if (args.positionals.len == 0) for (list.entries.items, 0..) |entry, entry_i| {
+        if (m_search) |search| {
+            const database_i = database.findWithId(entry.id) orelse continue;
+            const score = infoScoredMatch(search, database_i);
+            if (score == math.maxInt(usize))
+                continue;
+
+            scores.appendAssumeCapacity(score);
+        }
+        entries_to_print.appendAssumeCapacity(entry_i);
+    };
+
+    if (m_search) |_| {
+        std.sort.sortContext(entries_to_print.items.len, SortContext{
+            .entries = entries_to_print.items,
+            .scores = scores.items,
+        });
+    }
+
+    for (entries_to_print.items) |entry_i| {
+        const entry = list.entries.items[entry_i];
         try entry.writeToDsv(stdout);
         try stdout.writeAll("\n");
     }
-
-    if (args.positionals.len == 0) for (list.entries.items) |entry| {
-        if (m_search) |search| {
-            const i = database.findWithId(entry.id) orelse continue;
-            if (!infoMatch(search, i))
-                continue;
-        }
-
-        try entry.writeToDsv(stdout);
-        try stdout.writeAll("\n");
-    };
-
     try stdout_buffered.flush();
 }
+
+const SortContext = struct {
+    entries: []usize,
+    scores: []usize,
+
+    pub fn swap(ctx: SortContext, a_index: usize, b_index: usize) void {
+        mem.swap(usize, &ctx.entries[a_index], &ctx.entries[b_index]);
+        mem.swap(usize, &ctx.scores[a_index], &ctx.scores[b_index]);
+    }
+
+    pub fn lessThan(ctx: SortContext, a_index: usize, b_index: usize) bool {
+        return ctx.scores[a_index] < ctx.scores[b_index];
+    }
+};
 
 const Action = enum {
     complete,
@@ -551,35 +611,51 @@ fn makeAndOpenDir(dir: fs.Dir, sub_path: []const u8) !fs.Dir {
     return dir.openDir(sub_path, .{});
 }
 
-fn infoMatch(pattern: []const u8, info_index: usize) bool {
-    if (match(pattern, database.title[info_index].toString()))
-        return true;
+fn infoScoredMatch(pattern: []const u8, info_index: usize) usize {
+    var score = scoredMatch(pattern, database.title[info_index].toString());
+    for (database.synonyms(info_index)) |synonym|
+        score = math.min(score, scoredMatch(pattern, synonym.toString()));
 
-    for (database.synonyms(info_index)) |synonym| {
-        if (match(pattern, synonym.toString()))
-            return true;
-    }
-
-    return false;
+    return score;
 }
 
-fn match(pattern: []const u8, str: []const u8) bool {
+// Lower score is better
+fn scoredMatch(pattern: []const u8, str: []const u8) usize {
+    if (pattern.len > str.len)
+        return math.maxInt(usize);
+    if (pattern.len == 0)
+        return 0;
+
+    var score: usize = 0;
+    var last_match: usize = 0;
     var i: usize = 0;
     for (pattern) |c| {
-        while (i < str.len) : (i += 1) {
-            if (std.ascii.toLower(c) == std.ascii.toLower(str[i]))
-                break;
-        } else return false;
+        while (i < str.len) {
+            defer i += 1;
+
+            if (std.ascii.toLower(c) != std.ascii.toLower(str[i]))
+                continue;
+
+            score += @boolToInt(c != str[i]);
+            score += i -| (last_match + 1);
+            last_match = i;
+            break;
+        } else return math.maxInt(usize);
     }
 
-    return true;
+    score += (str.len - pattern.len) * 2;
+    return score;
 }
 
 test "match" {
-    try std.testing.expect(!match("abc", "ab"));
-    try std.testing.expect(match("abc", "abc"));
-    try std.testing.expect(match("abc", "abac"));
-    try std.testing.expect(match("AbC", "abac"));
-    try std.testing.expect(match("attack titan", "Attack On Titan"));
-    try std.testing.expect(!match("attack tatan", "Attack On Titan"));
+    try std.testing.expectEqual(@as(usize, math.maxInt(usize)), scoredMatch("abc", "ab"));
+    try std.testing.expectEqual(@as(usize, 0), scoredMatch("abc", "abc"));
+    try std.testing.expectEqual(@as(usize, 1), scoredMatch("abc", "Abc"));
+    try std.testing.expectEqual(@as(usize, 2), scoredMatch("abc", "ABc"));
+    try std.testing.expectEqual(@as(usize, 3), scoredMatch("abc", "ABC"));
+    try std.testing.expectEqual(@as(usize, 3), scoredMatch("abc", "abdc"));
+    try std.testing.expectEqual(@as(usize, 0), scoredMatch("attack on titan", "attack on titan"));
+    try std.testing.expectEqual(@as(usize, 3), scoredMatch("attack on titan", "Attack On Titan"));
+    try std.testing.expectEqual(@as(usize, 0), scoredMatch("Clannad", "Clannad"));
+    try std.testing.expectEqual(@as(usize, 125), scoredMatch("Clannad", "BJ Special: Hyakumannen Chikyuu no Tabi Bander Book"));
 }

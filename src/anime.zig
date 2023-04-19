@@ -235,17 +235,22 @@ pub const List = struct {
     }
 
     pub fn findWithId(list: List, id: Id) ?*Entry {
-        return list.find(id, struct {
+        const index = list.findIndexWithId(id) orelse return null;
+        return &list.entries.items[index];
+    }
+
+    pub fn findIndexWithId(list: List, id: Id) ?usize {
+        return list.findIndex(id, struct {
             fn match(i: Id, entry: Entry) bool {
                 return entry.id.id == i.id and entry.id.site == i.site;
             }
         }.match);
     }
 
-    pub fn find(list: List, ctx: anytype, match: *const fn (@TypeOf(ctx), Entry) bool) ?*Entry {
-        for (list.entries.items) |*entry| {
-            if (match(ctx, entry.*))
-                return entry;
+    pub fn findIndex(list: List, ctx: anytype, match: *const fn (@TypeOf(ctx), Entry) bool) ?usize {
+        for (list.entries.items, 0..) |entry, i| {
+            if (match(ctx, entry))
+                return i;
         }
 
         return null;
