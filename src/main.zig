@@ -610,17 +610,15 @@ fn makeAndOpenDir(dir: fs.Dir, sub_path: []const u8) !fs.Dir {
 }
 
 fn infoScoredMatch(pattern: []const u8, info_index: usize) usize {
-    var score = scoredMatch(pattern, database.title[info_index].toString());
+    var score = scoredMatch(pattern, database.title[info_index].toStringZ());
     for (database.synonyms(info_index)) |synonym|
-        score = math.min(score, scoredMatch(pattern, synonym.toString()));
+        score = math.min(score, scoredMatch(pattern, synonym.toStringZ()));
 
     return score;
 }
 
 // Lower score is better
-fn scoredMatch(pattern: []const u8, str: []const u8) usize {
-    if (pattern.len > str.len)
-        return math.maxInt(usize);
+fn scoredMatch(pattern: []const u8, str: [*:0]const u8) usize {
     if (pattern.len == 0)
         return 0;
 
@@ -628,7 +626,7 @@ fn scoredMatch(pattern: []const u8, str: []const u8) usize {
     var last_match: usize = 0;
     var i: usize = 0;
     for (pattern) |c| {
-        while (i < str.len) {
+        while (str[i] != 0) {
             defer i += 1;
 
             if (std.ascii.toLower(c) != std.ascii.toLower(str[i]))
@@ -641,7 +639,11 @@ fn scoredMatch(pattern: []const u8, str: []const u8) usize {
         } else return math.maxInt(usize);
     }
 
-    score += (str.len - pattern.len) * 2;
+    // Find length by going to end of string
+    while (str[i] != 0) : (i += 1) {}
+
+    const len = i;
+    score += (len - pattern.len) * 2;
     return score;
 }
 
