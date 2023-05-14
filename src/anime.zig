@@ -343,7 +343,7 @@ pub const Entry = struct {
     }
 
     pub fn fromDsv(allocator: mem.Allocator, row: []const u8) !Entry {
-        return (dsv(allocator, row) catch return error.InvalidEntry).value;
+        return (dsv.parse(allocator, row) catch return error.InvalidEntry).value;
     }
 
     pub fn writeToDsv(entry: Entry, writer: anytype) !void {
@@ -360,14 +360,14 @@ pub const Entry = struct {
         });
     }
 
-    const any_token = mecha.many(mecha.ascii.not(mecha.ascii.char('\t')), .{ .collect = false });
-    const minus_token = mecha.discard(mecha.ascii.char('-'));
-    const status_token = mecha.convert(Status.fromString, any_token);
-    const string_token = mecha.many(mecha.ascii.not(tab_token), .{});
-    const tab_token = mecha.discard(mecha.ascii.char('\t'));
+    const any_token = mecha.ascii.not(mecha.ascii.char('\t')).many(.{ .collect = false });
+    const minus_token = mecha.ascii.char('-').discard();
+    const status_token = any_token.convert(Status.fromString);
+    const string_token = mecha.ascii.not(tab_token).many(.{});
+    const tab_token = mecha.ascii.char('\t').discard();
     const usize_token = mecha.int(usize, .{ .parse_sign = false });
 
-    const dsv = mecha.map(mecha.toStruct(Entry), mecha.combine(.{
+    const dsv = mecha.combine(.{
         date,
         tab_token,
         status_token,
@@ -380,19 +380,19 @@ pub const Entry = struct {
         tab_token,
         link,
         mecha.eos,
-    }));
+    }).map(mecha.toStruct(Entry));
 
-    const date = mecha.map(mecha.toStruct(datetime.Date), mecha.combine(.{
+    const date = mecha.combine(.{
         mecha.int(u16, .{ .parse_sign = false }),
         minus_token,
         mecha.int(u4, .{ .parse_sign = false }),
         minus_token,
         mecha.int(u8, .{ .parse_sign = false }),
-    }));
+    }).map(mecha.toStruct(datetime.Date));
 
-    const link = mecha.convert(struct {
+    const link = any_token.convert(struct {
         fn conv(_: mem.Allocator, in: []const u8) !Id {
             return Id.fromUrl(in);
         }
-    }.conv, any_token);
+    }.conv);
 };
