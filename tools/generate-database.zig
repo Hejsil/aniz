@@ -23,8 +23,7 @@ pub fn main() !void {
         math.maxInt(usize),
     );
 
-    var tokens = json.TokenStream.init(database_json);
-    const database = try json.parse(Database, &tokens, .{ .allocator = arena });
+    const database = try json.parseFromSlice(Database, arena, database_json, .{});
 
     const out_file = try fs.cwd().createFile(out, .{});
     defer out_file.close();
