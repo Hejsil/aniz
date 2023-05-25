@@ -257,7 +257,7 @@ pub const List = struct {
     }
 
     pub fn sort(list: List) void {
-        std.sort.sort(Entry, list.entries.items, {}, struct {
+        std.mem.sort(Entry, list.entries.items, {}, struct {
             fn lessThan(_: void, a: Entry, b: Entry) bool {
                 // Sort from biggest datetime to smallest. Most people would expect that the
                 // newest entry they've seen is then one that ends up at the top of their list

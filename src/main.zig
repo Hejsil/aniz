@@ -329,7 +329,7 @@ fn databaseMain(
     };
 
     if (m_search) |_| {
-        std.sort.sortContext(entries_to_print.items.len, SortContext{
+        mem.sortContext(0, entries_to_print.items.len, SortContext{
             .entries = entries_to_print.items,
             .scores = scores.items,
         });
@@ -413,7 +413,7 @@ fn listMain(
     };
 
     if (m_search) |_| {
-        std.sort.sortContext(entries_to_print.items.len, SortContext{
+        mem.sortContext(0, entries_to_print.items.len, SortContext{
             .entries = entries_to_print.items,
             .scores = scores.items,
         });
