@@ -612,7 +612,7 @@ fn makeAndOpenDir(dir: fs.Dir, sub_path: []const u8) !fs.Dir {
 fn infoScoredMatch(pattern: []const u8, info_index: usize) usize {
     var score = scoredMatch(pattern, database.title[info_index].toStringZ());
     for (database.synonyms(info_index)) |synonym|
-        score = math.min(score, scoredMatch(pattern, synonym.toStringZ()));
+        score = @min(score, scoredMatch(pattern, synonym.toStringZ()));
 
     return score;
 }
