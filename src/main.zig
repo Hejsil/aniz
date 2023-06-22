@@ -549,7 +549,7 @@ fn manipulateList(
             }
         },
         .remove => {
-            const index = (@ptrToInt(entry) - @ptrToInt(list.entries.items.ptr)) /
+            const index = (@intFromPtr(entry) - @intFromPtr(list.entries.items.ptr)) /
                 @sizeOf(anime.Entry);
             _ = list.entries.swapRemove(index);
         },
@@ -632,7 +632,7 @@ fn scoredMatch(pattern: []const u8, str: [*:0]const u8) usize {
             if (std.ascii.toLower(c) != std.ascii.toLower(str[i]))
                 continue;
 
-            score += @boolToInt(c != str[i]);
+            score += @intFromBool(c != str[i]);
             score += i -| (last_match + 1);
             last_match = i;
             break;

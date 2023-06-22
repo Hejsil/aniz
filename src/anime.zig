@@ -123,7 +123,7 @@ pub const OptionalId = enum(u32) {
     pub fn unwrap(id: OptionalId) ?u32 {
         if (id == .none)
             return null;
-        return @enumToInt(id);
+        return @intFromEnum(id);
     }
 };
 
@@ -175,7 +175,7 @@ pub const Info = struct {
         for (urls) |url| {
             const res = Id.fromUrl(url) catch continue;
             if (res.site == site)
-                return @intToEnum(OptionalId, res.id);
+                return @enumFromInt(OptionalId, res.id);
         }
 
         return .none;
@@ -309,7 +309,7 @@ pub const Entry = struct {
             .gt => return false,
             .eq => {},
         }
-        switch (math.order(@enumToInt(a.status), @enumToInt(b.status))) {
+        switch (math.order(@intFromEnum(a.status), @intFromEnum(b.status))) {
             .lt => return true,
             .gt => return false,
             .eq => {},
@@ -329,7 +329,7 @@ pub const Entry = struct {
             .gt => return false,
             .eq => {},
         }
-        switch (math.order(@enumToInt(a.id.site), @enumToInt(b.id.site))) {
+        switch (math.order(@intFromEnum(a.id.site), @intFromEnum(b.id.site))) {
             .lt => return true,
             .gt => return false,
             .eq => {},

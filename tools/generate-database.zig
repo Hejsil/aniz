@@ -42,7 +42,7 @@ pub fn main() !void {
         \\    }
         \\
         \\    pub fn toStringZ(index: @This()) [*:0]const u8 {
-        \\        return strings[@enumToInt(index)..].ptr;
+        \\        return strings[@intFromEnum(index)..].ptr;
         \\    }
         \\};
         \\
@@ -78,7 +78,7 @@ pub fn main() !void {
         \\        .myanimelist => myanimelist,
         \\    };
         \\    for (slice_to_search, 0..) |id, i| {
-        \\        if (link_id.id == @enumToInt(id))
+        \\        if (link_id.id == @intFromEnum(id))
         \\            return i;
         \\    }
         \\
@@ -94,10 +94,10 @@ pub fn main() !void {
     );
 
     var database_entries = std.ArrayList(Entry).init(arena);
-    try database_entries.ensureUnusedCapacity(database.data.len);
+    try database_entries.ensureUnusedCapacity(database.value.data.len);
 
     // Create a list of only valid database entries
-    for (database.data) |entry| {
+    for (database.value.data) |entry| {
         for (entry.sources) |source| {
             _ = anime.Id.fromUrl(source) catch continue;
             database_entries.appendAssumeCapacity(entry);
@@ -115,7 +115,7 @@ pub fn main() !void {
             for (entry.sources) |source| {
                 const id = anime.Id.fromUrl(source) catch continue;
                 if (id.site == @field(anime.Id.Site, field.name)) {
-                    try writer.print("    @intToEnum(anime.OptionalId, {}),\n", .{id.id});
+                    try writer.print("    @enumFromInt(anime.OptionalId, {}),\n", .{id.id});
                     break;
                 }
             } else {
@@ -155,7 +155,7 @@ pub fn main() !void {
                 try strings.append(0);
             }
 
-            try writer.print("    @intToEnum(StringIndex, {}),\n", .{entry.value_ptr.*});
+            try writer.print("    @enumFromInt(StringIndex, {}),\n", .{entry.value_ptr.*});
         }
 
         try writer.writeAll(
@@ -190,7 +190,7 @@ pub fn main() !void {
                 try strings.appendSlice(string);
                 try strings.append(0);
             }
-            try writer.print("    @intToEnum(StringIndex, {}),\n", .{entry.value_ptr.*});
+            try writer.print("    @enumFromInt(StringIndex, {}),\n", .{entry.value_ptr.*});
         }
     }
     try writer.writeAll(
