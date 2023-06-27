@@ -115,7 +115,7 @@ pub fn main() !void {
             for (entry.sources) |source| {
                 const id = anime.Id.fromUrl(source) catch continue;
                 if (id.site == @field(anime.Id.Site, field.name)) {
-                    try writer.print("    @enumFromInt(anime.OptionalId, {}),\n", .{id.id});
+                    try writer.print("    @enumFromInt({}),\n", .{id.id});
                     break;
                 }
             } else {
@@ -155,7 +155,7 @@ pub fn main() !void {
                 try strings.append(0);
             }
 
-            try writer.print("    @enumFromInt(StringIndex, {}),\n", .{entry.value_ptr.*});
+            try writer.print("    @enumFromInt({}),\n", .{entry.value_ptr.*});
         }
 
         try writer.writeAll(
@@ -190,7 +190,7 @@ pub fn main() !void {
                 try strings.appendSlice(string);
                 try strings.append(0);
             }
-            try writer.print("    @enumFromInt(StringIndex, {}),\n", .{entry.value_ptr.*});
+            try writer.print("    @enumFromInt({}),\n", .{entry.value_ptr.*});
         }
     }
     try writer.writeAll(

@@ -175,7 +175,7 @@ pub const Info = struct {
         for (urls) |url| {
             const res = Id.fromUrl(url) catch continue;
             if (res.site == site)
-                return @enumFromInt(OptionalId, res.id);
+                return @enumFromInt(res.id);
         }
 
         return .none;
