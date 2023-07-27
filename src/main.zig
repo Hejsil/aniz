@@ -619,9 +619,6 @@ fn infoScoredMatch(pattern: []const u8, info_index: usize) usize {
 
 // Lower score is better
 fn scoredMatch(pattern: []const u8, str: [*:0]const u8) usize {
-    if (pattern.len == 0)
-        return 0;
-
     var score: usize = 0;
     var last_match: usize = 0;
     var i: usize = 0;
@@ -643,12 +640,13 @@ fn scoredMatch(pattern: []const u8, str: [*:0]const u8) usize {
     while (str[i] != 0) : (i += 1) {}
 
     const len = i;
-    score += (len - pattern.len) * 2;
+    score += ((len - pattern.len) * 2) * @intFromBool(pattern.len != 0);
     return score;
 }
 
 test "match" {
     try std.testing.expectEqual(@as(usize, math.maxInt(usize)), scoredMatch("abc", "ab"));
+    try std.testing.expectEqual(@as(usize, 0), scoredMatch("", "abc"));
     try std.testing.expectEqual(@as(usize, 0), scoredMatch("abc", "abc"));
     try std.testing.expectEqual(@as(usize, 1), scoredMatch("abc", "Abc"));
     try std.testing.expectEqual(@as(usize, 2), scoredMatch("abc", "ABc"));
