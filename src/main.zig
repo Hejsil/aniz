@@ -165,7 +165,7 @@ fn helpMain(
         "commands to modify your list in different ways.\n\n");
 
     try stdout.print(
-        "Your list is stored in \"${{XDG_CONFIG_HOME}}/{s}/{s}\".\n",
+        "Your list is stored in \"${{XDG_DATA_HOME}}/{s}/{s}\".\n",
         .{ program_name, list_name },
     );
 
