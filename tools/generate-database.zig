@@ -144,7 +144,10 @@ pub fn main() !void {
             const string = switch (field) {
                 .title => database_entry.title,
                 .image_path => blk: {
-                    const image_base = try anime.Image.Base.fromUrl(database_entry.picture);
+                    const image_base = anime.Image.Base.fromUrl(database_entry.picture) catch |err| {
+                        std.log.err("{s}\n", .{database_entry.picture});
+                        return err;
+                    };
                     break :blk database_entry.picture[image_base.url().len..];
                 },
             };
