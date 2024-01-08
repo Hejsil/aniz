@@ -1,34 +1,31 @@
 const std = @import("std");
 
-const Builder = std.build.Builder;
-
-pub fn build(b: *Builder) void {
+pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});
-    const strip = b.option(bool, "strip", "") orelse false;
 
     const mecha_module = b.createModule(.{
-        .source_file = .{ .path = "lib/mecha/mecha.zig" },
+        .root_source_file = .{ .path = "lib/mecha/mecha.zig" },
     });
     const datetime_module = b.createModule(.{
-        .source_file = .{ .path = "lib/zig-datetime/src/datetime.zig" },
+        .root_source_file = .{ .path = "lib/zig-datetime/src/datetime.zig" },
     });
     const clap_module = b.createModule(.{
-        .source_file = .{ .path = "lib/zig-clap/clap.zig" },
+        .root_source_file = .{ .path = "lib/zig-clap/clap.zig" },
     });
     const folders_module = b.createModule(.{
-        .source_file = .{ .path = "lib/known-folders/known-folders.zig" },
+        .root_source_file = .{ .path = "lib/known-folders/known-folders.zig" },
     });
     const anime_module = b.createModule(.{
-        .source_file = .{ .path = "src/anime.zig" },
-        .dependencies = &.{
+        .root_source_file = .{ .path = "src/anime.zig" },
+        .imports = &.{
             .{ .name = "mecha", .module = mecha_module },
             .{ .name = "datetime", .module = datetime_module },
         },
     });
     const database_module = b.createModule(.{
-        .source_file = .{ .path = "zig-cache/database.zig" },
-        .dependencies = &.{
+        .root_source_file = .{ .path = "zig-cache/database.zig" },
+        .imports = &.{
             .{ .name = "anime", .module = anime_module },
         },
     });
@@ -41,8 +38,7 @@ pub fn build(b: *Builder) void {
     });
     const run_generate_database = b.addRunArtifact(generate_database);
 
-    generate_database.addModule("anime", anime_module);
-    generate_database.strip = strip;
+    generate_database.root_module.addImport("anime", anime_module);
 
     run_generate_database.addArgs(
         &.{
@@ -68,12 +64,11 @@ pub fn build(b: *Builder) void {
         .optimize = optimize,
     });
 
-    aniz.addModule("clap", clap_module);
-    aniz.addModule("datetime", datetime_module);
-    aniz.addModule("known_folders", folders_module);
-    aniz.addModule("anime", anime_module);
-    aniz.addModule("database", database_module);
-    aniz.strip = strip;
+    aniz.root_module.addImport("clap", clap_module);
+    aniz.root_module.addImport("datetime", datetime_module);
+    aniz.root_module.addImport("known_folders", folders_module);
+    aniz.root_module.addImport("anime", anime_module);
+    aniz.root_module.addImport("database", database_module);
 
     aniz.step.dependOn(&run_generate_database.step);
     b.installArtifact(generate_database);
