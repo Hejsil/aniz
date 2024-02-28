@@ -325,7 +325,7 @@ const Entry = struct {
     picture: []const u8,
     thumbnail: []const u8,
     synonyms: []const []const u8,
-    relations: []const []const u8,
+    relatedAnime: []const []const u8,
     tags: []const []const u8,
 };
 
