@@ -287,13 +287,14 @@ pub const Entry = struct {
         watching,
 
         pub fn fromString(_: mem.Allocator, str: []const u8) !Status {
-            return std.ComptimeStringMap(Status, .{
+            const map = comptime std.StaticStringMap(Status).initComptime(.{
                 .{ "c", .complete },
                 .{ "d", .dropped },
                 .{ "o", .on_hold },
                 .{ "p", .plan_to_watch },
                 .{ "w", .watching },
-            }).get(str) orelse return error.ParserFailed;
+            });
+            return map.get(str) orelse return error.ParserFailed;
         }
 
         pub fn toString(s: Status) []const u8 {
