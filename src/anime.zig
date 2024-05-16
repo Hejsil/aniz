@@ -73,7 +73,8 @@ pub const Image = struct {
     }
 
     pub const Base = enum(u4) {
-        no_pic,
+        no_pic1,
+        no_pic2,
         anidb,
         anilist,
         animeplanet1,
@@ -101,7 +102,8 @@ pub const Image = struct {
 
         pub fn url(base: Image.Base) []const u8 {
             return switch (base) {
-                .no_pic => "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/pics/no_pic.png",
+                .no_pic1 => "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/pics/no_pic.png",
+                .no_pic2 => "https://github.com/manami-project/anime-offline-database/raw/master/pics/no_pic.png",
                 .livechart => "https://u.livechart.me/anime/",
                 .anilist => "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/",
                 .notifymoe => "https://media.notify.moe/images/anime/large/",

@@ -5,26 +5,26 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
     const mecha_module = b.createModule(.{
-        .root_source_file = .{ .path = "lib/mecha/mecha.zig" },
+        .root_source_file = b.path("lib/mecha/mecha.zig"),
     });
     const datetime_module = b.createModule(.{
-        .root_source_file = .{ .path = "lib/zig-datetime/src/datetime.zig" },
+        .root_source_file = b.path("lib/zig-datetime/src/datetime.zig"),
     });
     const clap_module = b.createModule(.{
-        .root_source_file = .{ .path = "lib/zig-clap/clap.zig" },
+        .root_source_file = b.path("lib/zig-clap/clap.zig"),
     });
     const folders_module = b.createModule(.{
-        .root_source_file = .{ .path = "lib/known-folders/known-folders.zig" },
+        .root_source_file = b.path("lib/known-folders/known-folders.zig"),
     });
     const anime_module = b.createModule(.{
-        .root_source_file = .{ .path = "src/anime.zig" },
+        .root_source_file = b.path("src/anime.zig"),
         .imports = &.{
             .{ .name = "mecha", .module = mecha_module },
             .{ .name = "datetime", .module = datetime_module },
         },
     });
     const database_module = b.createModule(.{
-        .root_source_file = .{ .path = "zig-cache/database.zig" },
+        .root_source_file = b.path("zig-cache/database.zig"),
         .imports = &.{
             .{ .name = "anime", .module = anime_module },
         },
@@ -32,7 +32,7 @@ pub fn build(b: *std.Build) void {
 
     const generate_database = b.addExecutable(.{
         .name = "generate-database",
-        .root_source_file = .{ .path = "tools/generate-database.zig" },
+        .root_source_file = b.path("tools/generate-database.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -49,7 +49,7 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run all tests in all modes.");
     const tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -59,7 +59,7 @@ pub fn build(b: *std.Build) void {
 
     const aniz = b.addExecutable(.{
         .name = "aniz",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
