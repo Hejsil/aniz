@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const database_path = ".zig-cache/database.zig";
+
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});
@@ -24,7 +26,7 @@ pub fn build(b: *std.Build) void {
         },
     });
     const database_module = b.createModule(.{
-        .root_source_file = b.path("zig-cache/database.zig"),
+        .root_source_file = b.path(database_path),
         .imports = &.{
             .{ .name = "anime", .module = anime_module },
         },
@@ -43,7 +45,7 @@ pub fn build(b: *std.Build) void {
     run_generate_database.addArgs(
         &.{
             "lib/anime-offline-database/anime-offline-database.json",
-            "zig-cache/database.zig",
+            database_path,
         },
     );
 
