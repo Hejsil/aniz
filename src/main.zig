@@ -592,7 +592,7 @@ fn saveList(list: anime.List) !void {
 }
 
 fn openFolder(folder: folders.KnownFolder, flags: fs.Dir.OpenDirOptions) !fs.Dir {
-    var buf: [fs.MAX_PATH_BYTES]u8 = undefined;
+    var buf: [fs.max_path_bytes]u8 = undefined;
     var fba = heap.FixedBufferAllocator.init(&buf);
     var dir = (try folders.open(fba.allocator(), folder, flags)) orelse
         return error.NoCacheDir;

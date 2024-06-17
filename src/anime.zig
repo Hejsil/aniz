@@ -226,7 +226,7 @@ pub const List = struct {
         var res = std.ArrayListUnmanaged(Entry){};
         errdefer res.deinit(allocator);
 
-        var it = mem.tokenize(u8, dsv, "\n");
+        var it = mem.tokenizeScalar(u8, dsv, '\n');
         while (it.next()) |line|
             try res.append(allocator, try Entry.fromDsv(arena.allocator(), line));
         return List{ .arena = arena, .entries = res };
