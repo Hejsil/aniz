@@ -1,15 +1,6 @@
-[submodule "lib/zig-clap"]
-	path = lib/zig-clap
-	url = ../../Hejsil/zig-clap.git
 [submodule "lib/known-folders"]
 	path = lib/known-folders
 	url = ../../ziglibs/known-folders.git
 [submodule "lib/zig-datetime"]
 	path = lib/zig-datetime
 	url = ../../frmdstryr/zig-datetime.git
-[submodule "lib/mecha"]
-	path = lib/mecha
-	url = ../../Hejsil/mecha.git
-[submodule "lib/anime-offline-database"]
-	path = lib/anime-offline-database
-	url = ../../manami-project/anime-offline-database.git
