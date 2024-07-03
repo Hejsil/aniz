@@ -1,659 +1,479 @@
-const anime = @import("anime");
-const clap = @import("clap");
-const database = @import("database");
-const datetime = @import("datetime");
-const folders = @import("known_folders");
-const std = @import("std");
-
-const fs = std.fs;
-const heap = std.heap;
-const io = std.io;
-const json = std.json;
-const math = std.math;
-const mem = std.mem;
-const meta = std.meta;
-const process = std.process;
-
-const list_name = "list";
-const program_name = "aniz";
-
 pub fn main() !void {
-    var gba = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gba.allocator();
-    defer _ = gba.deinit();
+    var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa = gpa_state.allocator();
+    defer _ = gpa_state.deinit();
 
-    var args_iter = try std.process.argsWithAllocator(allocator);
-    defer args_iter.deinit();
+    const args = try std.process.argsAlloc(gpa);
+    defer std.process.argsFree(gpa, args);
 
-    _ = args_iter.next();
+    return mainWithArgs(gpa, args[1..]);
+}
 
-    const command_str = args_iter.next() orelse "help";
+pub fn mainWithArgs(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var program = Program{
+        .allocator = allocator,
+        .args = .{ .args = args },
+    };
 
-    for ([_][]const SubCommand{
-        &list_modifying_sub_commands,
-        &print_csv_sub_commands,
-        &other_sub_commands,
-    }) |sub_commands| {
-        for (sub_commands) |sub_command| {
-            if (mem.eql(u8, command_str, sub_command.name)) {
-                sub_command.func(sub_command, allocator, &args_iter) catch |err| switch (err) {
-                    // BrokenPipe is in most cases expected. It will be triggered just by doing
-                    // `aniz database | head -n1`. It is not an error for our program so let's
-                    // ignore it and exit cleanly.
-                    error.BrokenPipe => {},
-                    else => return err,
-                };
-                return;
-            }
+    return program.mainCommand();
+}
+
+const Program = @This();
+
+allocator: std.mem.Allocator,
+args: ArgParser,
+
+const main_usage =
+    \\Usage: aniz [command] [args]
+    \\
+    \\Commands:
+    \\  database <subcommand>
+    \\  list     <subcommand>
+    \\  help                   Display this message
+    \\
+;
+
+pub fn mainCommand(program: *Program) !void {
+    while (!program.args.isDone()) {
+        if (program.args.flag(&.{"database"})) {
+            return program.databaseSubCommand();
+        } else if (program.args.flag(&.{"list"})) {
+            return program.listSubCommand();
+        } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
+            return std.io.getStdOut().writeAll(main_usage);
+        } else {
+            try std.io.getStdErr().writeAll(main_usage);
+            return error.InvalidArgument;
         }
     }
 
-    return helpMain(help_sub_command, allocator, &args_iter);
+    try std.io.getStdErr().writeAll(main_usage);
+    return error.InvalidArgument;
 }
 
-const SubCommand = struct {
-    name: []const u8,
-    func: *const fn (SubCommand, mem.Allocator, *process.ArgIterator) anyerror!void,
-    description: []const u8,
+const database_sub_usage =
+    \\Usage:
+    \\  aniz database [command] [args]
+    \\  aniz database [options] [ids]...
+    \\
+    \\Commands:
+    \\  download               Download newest version of the database
+    \\  help                   Display this message
+    \\  [ids]...
+    \\
+;
 
-    fn help(sub_command: SubCommand, writer: anytype) !void {
-        const spaces = " " ** 20;
-        try writer.writeAll("    ");
-        try writer.writeAll(sub_command.name);
-        try writer.writeAll(spaces[sub_command.name.len..]);
-        try writer.writeAll(sub_command.description);
-        try writer.writeAll("\n");
+fn databaseSubCommand(program: *Program) !void {
+    if (program.args.isDone())
+        return program.databaseCommand();
+
+    if (program.args.flag(&.{"download"})) {
+        return program.databaseDownloadCommand();
+    } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
+        return std.io.getStdOut().writeAll(database_sub_usage);
+    } else {
+        return program.databaseCommand();
+    }
+}
+
+fn databaseCommand(program: *Program) !void {
+    var m_search: ?[]const u8 = null;
+    var ids = std.AutoArrayHashMap(Database.Id, void).init(program.allocator);
+    defer ids.deinit();
+
+    while (!program.args.isDone()) {
+        if (program.args.option(&.{ "-s", "--search" })) |search| {
+            m_search = search;
+        } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
+            return std.io.getStdOut().writeAll(database_sub_usage);
+        } else {
+            const url = program.args.eat();
+            const id = try Database.Id.fromUrl(url);
+            try ids.put(id, {});
+        }
     }
 
-    fn usageOut(sub_command: SubCommand, p: []const clap.Param(clap.Help)) !void {
-        var stdout_buffered = io.bufferedWriter(io.getStdOut().writer());
-        try sub_command.usage(stdout_buffered.writer(), p);
+    var db = try loadDatabase(program.allocator);
+    defer db.deinit(program.allocator);
+
+    var stdout_buffered = std.io.bufferedWriter(std.io.getStdOut().writer());
+    const stdout = stdout_buffered.writer();
+
+    if (ids.count() == 0 and m_search == null) {
+        // Fast path if no ids or search is provided.
+        for (db.entries) |entry| {
+            try entry.serializeToDsv(db.strings, stdout);
+            try stdout.writeAll("\n");
+        }
         try stdout_buffered.flush();
     }
 
-    fn usageErr(sub_command: SubCommand, p: []const clap.Param(clap.Help)) !void {
-        var stderr_buffered = io.bufferedWriter(io.getStdErr().writer());
-        try sub_command.usage(stderr_buffered.writer(), p);
-        try stderr_buffered.flush();
-    }
-
-    fn usage(sub_command: SubCommand, stream: anytype, p: []const clap.Param(clap.Help)) !void {
-        try stream.print("Usage: {s} {s} ", .{ program_name, sub_command.name });
-        try clap.usage(stream, clap.Help, p);
-        try stream.writeAll("\n\n");
-        try stream.writeAll(sub_command.description);
-        try stream.writeAll(
-            \\
-            \\
-            \\Options:
-            \\
-        );
-        try clap.help(stream, clap.Help, p, .{});
-    }
-};
-
-const list_modifying_sub_commands = [_]SubCommand{
-    .{ .name = "complete", .func = completeMain, .description = "Mark animes as completed." },
-    .{ .name = "drop", .func = dropMain, .description = "Mark animes as dropped." },
-    .{ .name = "on-hold", .func = onHoldMain, .description = "Mark animes as on hold." },
-    .{ .name = "plan-to-watch", .func = planToWatchMain, .description = "Mark animes as plan to watch." },
-    .{ .name = "remove", .func = removeMain, .description = "Remove animes from your list." },
-    .{ .name = "update", .func = updateMain, .description = "Update animes information in your list." },
-    .{ .name = "watch-episode", .func = watchEpisodeMain, .description = "Increase the number of episodes watched on animes by one." },
-    .{ .name = "watching", .func = watchingMain, .description = "Mark animes as watching." },
-};
-
-const print_csv_sub_commands = [_]SubCommand{
-    .{ .name = "database", .func = databaseMain, .description = "Print the entire database as tsv." },
-    .{ .name = "list", .func = listMain, .description = "Print your entire anime list as tsv." },
-};
-
-const help_sub_command = SubCommand{
-    .name = "help",
-    .func = helpMain,
-    .description = "Print this help message and exit.",
-};
-const other_sub_commands = [_]SubCommand{help_sub_command};
-
-const clap_parsers = .{
-    .anime = clap.parsers.string,
-    .str = clap.parsers.string,
-};
-
-fn helpMain(
-    _: SubCommand,
-    allocator: mem.Allocator,
-    args_iter: *std.process.ArgIterator,
-) anyerror!void {
-    _ = allocator;
-    _ = args_iter;
-
-    var stdout_buffered = io.bufferedWriter(io.getStdOut().writer());
-    const stdout = stdout_buffered.writer();
-
-    try stdout.writeAll("Usage: ");
-    try stdout.writeAll(program_name);
-    try stdout.writeAll(
-        \\ [command] [option]...
-        \\
-        \\
-    );
-
-    try stdout.print("{s} is a program for keeping a local list of anime you have watched. " ++
-        "It ships with an anime database embedded in the executable, so it does not require " ++
-        "an internet connection to function. You need to update it to get an up to date anime " ++
-        "database.\n\n", .{program_name});
-
-    try stdout.print("{s} uses existing site urls as ids for anime. When any help " ++
-        "message refers to <anime>, it refers to such a url.\n\n", .{program_name});
-
-    try stdout.writeAll("Current urls supported are:\n");
-    inline for (@typeInfo(anime.Id.Site).Enum.fields) |field| {
-        try stdout.writeAll("    ");
-        try stdout.writeAll(@field(anime.Id.Site, field.name).url());
-        try stdout.writeAll("<id>\n");
-    }
-
-    try stdout.writeAll("\n");
-    try stdout.writeAll("To get started, lets try to add Clannad to our list:\n");
-    try stdout.print("    {s} complete 'https://anidb.net/anime/5101'\n\n", .{program_name});
-
-    try stdout.writeAll("We can then see our list with:\n");
-    try stdout.print("    {s} list\n\n", .{program_name});
-
-    try stdout.writeAll("You have now started your own list. Have a look at the other sub " ++
-        "commands to modify your list in different ways.\n\n");
-
-    try stdout.print(
-        "Your list is stored in \"${{XDG_DATA_HOME}}/{s}/{s}\".\n",
-        .{ program_name, list_name },
-    );
-
-    try stdout.writeAll(
-        \\
-        \\List Manipulation Commands:
-        \\
-        \\
-    );
-    for (list_modifying_sub_commands) |sub_command|
-        try sub_command.help(stdout);
-
-    try stdout.writeAll(
-        \\
-        \\
-        \\List Printing Commands:
-        \\
-        \\
-    );
-    for (print_csv_sub_commands) |sub_command|
-        try sub_command.help(stdout);
-
-    try stdout.writeAll(
-        \\
-        \\
-        \\Other Commands:
-        \\
-        \\
-    );
-    for (other_sub_commands) |sub_command|
-        try sub_command.help(stdout);
-
-    try stdout_buffered.flush();
-}
-
-fn completeMain(
-    sub_command: SubCommand,
-    allocator: mem.Allocator,
-    args_iter: *std.process.ArgIterator,
-) anyerror!void {
-    return listManipulateMain(sub_command, allocator, args_iter, .complete);
-}
-
-fn dropMain(
-    sub_command: SubCommand,
-    allocator: mem.Allocator,
-    args_iter: *std.process.ArgIterator,
-) anyerror!void {
-    return listManipulateMain(sub_command, allocator, args_iter, .drop);
-}
-
-fn planToWatchMain(
-    sub_command: SubCommand,
-    allocator: mem.Allocator,
-    args_iter: *std.process.ArgIterator,
-) anyerror!void {
-    return listManipulateMain(sub_command, allocator, args_iter, .plan_to_watch);
-}
-
-fn onHoldMain(
-    sub_command: SubCommand,
-    allocator: mem.Allocator,
-    args_iter: *std.process.ArgIterator,
-) anyerror!void {
-    return listManipulateMain(sub_command, allocator, args_iter, .on_hold);
-}
-
-fn watchingMain(
-    sub_command: SubCommand,
-    allocator: mem.Allocator,
-    args_iter: *std.process.ArgIterator,
-) anyerror!void {
-    return listManipulateMain(sub_command, allocator, args_iter, .watching);
-}
-
-fn watchEpisodeMain(
-    sub_command: SubCommand,
-    allocator: mem.Allocator,
-    args_iter: *std.process.ArgIterator,
-) anyerror!void {
-    return listManipulateMain(sub_command, allocator, args_iter, .watch_episode);
-}
-
-fn removeMain(
-    sub_command: SubCommand,
-    allocator: mem.Allocator,
-    args_iter: *std.process.ArgIterator,
-) anyerror!void {
-    return listManipulateMain(sub_command, allocator, args_iter, .remove);
-}
-
-fn updateMain(
-    sub_command: SubCommand,
-    allocator: mem.Allocator,
-    args_iter: *std.process.ArgIterator,
-) anyerror!void {
-    return listManipulateMain(sub_command, allocator, args_iter, .update);
-}
-
-fn databaseMain(
-    sub_command: SubCommand,
-    allocator: mem.Allocator,
-    args_iter: *std.process.ArgIterator,
-) anyerror!void {
-    const params = comptime clap.parseParamsComptime(
-        \\-h, --help          Print this help message and exit
-        \\-s, --search <str>  Only print entries that matches a search
-        \\<anime>...
-    );
-
-    var diag = clap.Diagnostic{};
-    var args = clap.parseEx(clap.Help, &params, clap_parsers, args_iter, .{
-        .diagnostic = &diag,
-        .allocator = allocator,
-    }) catch |err| {
-        diag.report(io.getStdErr().writer(), err) catch {};
-        return err;
-    };
-    defer args.deinit();
-
-    if (args.args.help != 0)
-        return sub_command.usageOut(&params);
-
-    const m_search = args.args.search;
-
-    var entries_to_print = std.ArrayList(usize).init(allocator);
+    var entries_to_print = std.ArrayList(Database.Entry).init(program.allocator);
     defer entries_to_print.deinit();
-    var scores = std.ArrayList(usize).init(allocator);
-    defer scores.deinit();
 
-    const max_to_print = if (args.positionals.len == 0) database.anidb.len else args.positionals.len;
-    try entries_to_print.ensureUnusedCapacity(max_to_print);
-    if (m_search) |_|
-        try scores.ensureUnusedCapacity(max_to_print);
-
-    var stdout_buffered = io.bufferedWriter(io.getStdOut().writer());
-    const stdout = stdout_buffered.writer();
-
-    for (args.positionals) |link| {
-        const link_id = anime.Id.fromUrl(link) catch continue;
-        const i = database.findWithId(link_id) orelse continue;
-        if (m_search) |search| {
-            const score = infoScoredMatch(search, i);
-            if (score == math.maxInt(usize))
-                continue;
-
-            scores.appendAssumeCapacity(score);
-        }
-        entries_to_print.appendAssumeCapacity(i);
-    }
-
-    if (args.positionals.len == 0) for (database.anidb, 0..) |_, i| {
-        if (m_search) |search| {
-            const score = infoScoredMatch(search, i);
-            if (score == math.maxInt(usize))
-                continue;
-
-            scores.appendAssumeCapacity(score);
-        }
-        entries_to_print.appendAssumeCapacity(i);
-    };
-
-    if (m_search) |_| {
-        mem.sortContext(0, entries_to_print.items.len, SortContext{
-            .entries = entries_to_print.items,
-            .scores = scores.items,
-        });
-    }
+    try db.filterEntries(&entries_to_print, .{
+        .search = m_search,
+        .ids = if (ids.count() == 0) null else ids.keys(),
+    });
 
     for (entries_to_print.items) |entry| {
-        const info = database.info(entry);
-        try info.writeToDsv(stdout);
+        try entry.serializeToDsv(db.strings, stdout);
         try stdout.writeAll("\n");
     }
     try stdout_buffered.flush();
 }
 
-fn listMain(
-    sub_command: SubCommand,
-    allocator: mem.Allocator,
-    args_iter: *std.process.ArgIterator,
-) anyerror!void {
-    const params = comptime clap.parseParamsComptime(
-        \\-h, --help  Print this help message and exit
-        \\-s, --search <str>  Only print entries that matches a search
-        \\<anime>...
-        \\
-    );
+const database_download_usage =
+    \\Usage: aniz download
+    \\
+;
 
-    var diag = clap.Diagnostic{};
-    var args = clap.parseEx(clap.Help, &params, clap_parsers, args_iter, .{
-        .diagnostic = &diag,
-        .allocator = allocator,
-    }) catch |err| {
-        diag.report(io.getStdErr().writer(), err) catch {};
-        return err;
-    };
-    defer args.deinit();
+fn databaseDownloadCommand(program: *Program) !void {
+    while (!program.args.isDone()) {
+        if (program.args.flag(&.{ "-h", "--help", "help" })) {
+            return std.io.getStdOut().writeAll(database_download_usage);
+        } else {
+            try std.io.getStdErr().writeAll(database_download_usage);
+            return error.InvalidArgument;
+        }
+    }
 
-    if (args.args.help != 0)
-        return sub_command.usageOut(&params);
+    var http_client = std.http.Client{ .allocator = program.allocator };
+    errdefer http_client.deinit();
 
-    var list = try loadList(allocator);
-    defer list.deinit();
+    var data_dir = try openFolder(.cache, .{});
+    defer data_dir.close();
 
-    const m_search = args.args.search;
+    const database_json_file = try data_dir.createFile(database_json_name, .{ .read = true });
+    defer database_json_file.close();
 
-    var entries_to_print = std.ArrayList(usize).init(allocator);
-    defer entries_to_print.deinit();
-    var scores = std.ArrayList(usize).init(allocator);
-    defer scores.deinit();
+    const database_json_url = "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/anime-offline-database-minified.json";
+    try download(&http_client, database_json_url, database_json_file.writer());
 
-    const max_to_print = if (args.positionals.len == 0) database.anidb.len else args.positionals.len;
-    try entries_to_print.ensureUnusedCapacity(max_to_print);
-    if (m_search) |_|
-        try scores.ensureUnusedCapacity(max_to_print);
+    try database_json_file.seekTo(0);
+    const database_json = try database_json_file.readToEndAlloc(program.allocator, std.math.maxInt(usize));
+    defer program.allocator.free(database_json);
 
-    var stdout_buffered = io.bufferedWriter(io.getStdOut().writer());
+    var db = try Database.deserializeFromJson(program.allocator, database_json);
+    defer db.deinit(program.allocator);
+
+    const database_bin_file = try data_dir.createFile(database_bin_name, .{});
+    defer database_bin_file.close();
+
+    var buffered_writer = std.io.bufferedWriter(database_bin_file.writer());
+    try db.serializeToBinary(buffered_writer.writer());
+    try buffered_writer.flush();
+}
+
+const list_sub_usage =
+    \\Usage:
+    \\  aniz list [command] [args]
+    \\  aniz list [options] [ids]...
+    \\
+    \\Commands:
+    \\  complete
+    \\  drop
+    \\  on-hold
+    \\  plan-to-watch
+    \\  remove
+    \\  update
+    \\  watch-episode
+    \\  watching
+    \\  help                   Display this message
+    \\  [ids]...
+    \\
+;
+
+fn listSubCommand(program: *Program) !void {
+    if (program.args.isDone())
+        return program.listCommand();
+
+    if (program.args.flag(&.{"complete"})) {
+        return program.manipulateListCommand(completeAction);
+    } else if (program.args.flag(&.{"drop"})) {
+        return program.manipulateListCommand(dropAction);
+    } else if (program.args.flag(&.{"on-hold"})) {
+        return program.manipulateListCommand(onHoldAction);
+    } else if (program.args.flag(&.{"plan-to-watch"})) {
+        return program.manipulateListCommand(planToWatchAction);
+    } else if (program.args.flag(&.{"remove"})) {
+        return program.manipulateListCommand(removeAction);
+    } else if (program.args.flag(&.{"update"})) {
+        return program.manipulateListCommand(updateAction);
+    } else if (program.args.flag(&.{"watch-episode"})) {
+        return program.manipulateListCommand(watchEpisodeAction);
+    } else if (program.args.flag(&.{"watching"})) {
+        return program.manipulateListCommand(watchingAction);
+    } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
+        return std.io.getStdOut().writeAll(list_sub_usage);
+    } else {
+        return program.listCommand();
+    }
+}
+
+fn listCommand(program: *Program) !void {
+    var m_search: ?[]const u8 = null;
+    var ids = std.AutoArrayHashMap(Database.Id, void).init(program.allocator);
+    defer ids.deinit();
+
+    while (!program.args.isDone()) {
+        if (program.args.option(&.{ "-s", "--search" })) |search| {
+            m_search = search;
+        } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
+            return std.io.getStdOut().writeAll(list_sub_usage);
+        } else {
+            const url = program.args.eat();
+            const id = try Database.Id.fromUrl(url);
+            try ids.put(id, {});
+        }
+    }
+
+    var list = try loadList(program.allocator);
+    defer list.deinit(program.allocator);
+
+    var stdout_buffered = std.io.bufferedWriter(std.io.getStdOut().writer());
     const stdout = stdout_buffered.writer();
 
-    for (args.positionals) |link| {
-        const link_id = anime.Id.fromUrl(link) catch continue;
-        const entry_i = list.findIndexWithId(link_id) orelse continue;
-        if (m_search) |search| {
-            const database_i = database.findWithId(list.entries.items[entry_i].id) orelse continue;
-            const score = infoScoredMatch(search, database_i);
-            if (score == math.maxInt(usize))
-                continue;
-
-            scores.appendAssumeCapacity(score);
+    if (ids.count() == 0 and m_search == null) {
+        // Fast path if no ids or search is provided.
+        for (list.entries.items) |entry| {
+            try entry.serializeToTsv(list.intern.sliceZ(), stdout);
+            try stdout.writeAll("\n");
         }
-        entries_to_print.appendAssumeCapacity(entry_i);
+        try stdout_buffered.flush();
     }
 
-    if (args.positionals.len == 0) for (list.entries.items, 0..) |entry, entry_i| {
-        if (m_search) |search| {
-            const database_i = database.findWithId(entry.id) orelse continue;
-            const score = infoScoredMatch(search, database_i);
-            if (score == math.maxInt(usize))
-                continue;
+    var db = try loadDatabase(program.allocator);
+    defer db.deinit(program.allocator);
 
-            scores.appendAssumeCapacity(score);
+    var entries_to_print = std.ArrayList(Database.Entry).init(program.allocator);
+    defer entries_to_print.deinit();
+
+    try db.filterEntries(&entries_to_print, .{
+        .search = m_search,
+        .ids = if (ids.count() == 0) null else ids.keys(),
+    });
+
+    for (entries_to_print.items) |entry| {
+        for (entry.ids.all()) |m_id| {
+            const id = m_id orelse continue;
+            const list_entry = list.find(id) orelse continue;
+            try list_entry.serializeToTsv(list.intern.sliceZ(), stdout);
+            try stdout.writeAll("\n");
         }
-        entries_to_print.appendAssumeCapacity(entry_i);
-    };
-
-    if (m_search) |_| {
-        mem.sortContext(0, entries_to_print.items.len, SortContext{
-            .entries = entries_to_print.items,
-            .scores = scores.items,
-        });
-    }
-
-    for (entries_to_print.items) |entry_i| {
-        const entry = list.entries.items[entry_i];
-        try entry.writeToDsv(stdout);
-        try stdout.writeAll("\n");
     }
     try stdout_buffered.flush();
 }
 
-const SortContext = struct {
-    entries: []usize,
-    scores: []usize,
+const manipuate_list_usage =
+    \\Usage: aniz list <action> [ids]...
+    \\
+    \\Commands:
+    \\  help                   Display this message
+    \\  [ids]...
+    \\
+;
 
-    pub fn swap(ctx: SortContext, a_index: usize, b_index: usize) void {
-        mem.swap(usize, &ctx.entries[a_index], &ctx.entries[b_index]);
-        mem.swap(usize, &ctx.scores[a_index], &ctx.scores[b_index]);
-    }
-
-    pub fn lessThan(ctx: SortContext, a_index: usize, b_index: usize) bool {
-        return ctx.scores[a_index] < ctx.scores[b_index];
-    }
-};
-
-const Action = enum {
-    complete,
-    drop,
-    on_hold,
-    plan_to_watch,
-    remove,
-    update,
-    watch_episode,
-    watching,
-};
-
-fn listManipulateMain(
-    sub_command: SubCommand,
-    allocator: mem.Allocator,
-    args_iter: *std.process.ArgIterator,
-    action: Action,
+fn manipulateListCommand(
+    program: *Program,
+    action: *const fn (*List, *List.Entry, Database.Entry) void,
 ) !void {
-    const params = comptime clap.parseParamsComptime(
-        \\-h, --help  Print this help message and exit
-        \\<anime>...
-        \\
-    );
+    var ids = std.AutoArrayHashMap(Database.Id, void).init(program.allocator);
+    defer ids.deinit();
 
-    var diag = clap.Diagnostic{};
-    var args = clap.parseEx(clap.Help, &params, clap_parsers, args_iter, .{
-        .diagnostic = &diag,
-        .allocator = allocator,
-    }) catch |err| {
-        diag.report(io.getStdErr().writer(), err) catch {};
-        return err;
-    };
-    defer args.deinit();
+    while (!program.args.isDone()) {
+        if (program.args.flag(&.{ "-h", "--help", "help" })) {
+            return std.io.getStdOut().writeAll(manipuate_list_usage);
+        } else {
+            const url = program.args.eat();
+            const id = try Database.Id.fromUrl(url);
+            try ids.put(id, {});
+        }
+    }
 
-    if (args.args.help != 0)
-        return sub_command.usageOut(&params);
+    var db = try loadDatabase(program.allocator);
+    defer db.deinit(program.allocator);
 
-    var list = try loadList(allocator);
-    defer list.deinit();
+    var list = try loadList(program.allocator);
+    defer list.deinit(program.allocator);
 
-    for (args.positionals) |anime_link|
-        try manipulateList(allocator, &list, anime_link, action);
+    for (ids.keys()) |id|
+        try program.manipulateAnimeInList(&db, &list, id, action);
 
     try saveList(list);
 }
 
-fn manipulateList(
-    allocator: mem.Allocator,
-    list: *anime.List,
-    link: []const u8,
-    action: Action,
+fn manipulateAnimeInList(
+    program: *Program,
+    db: *const Database,
+    list: *List,
+    id: Database.Id,
+    action: *const fn (*List, *List.Entry, Database.Entry) void,
 ) !void {
-    const link_id = try anime.Id.fromUrl(link);
-    const i = database.findWithId(link_id) orelse {
-        std.log.err("Anime '{s}' was not found in the database", .{link});
+    const database_entry = db.findWithId(id) orelse {
+        std.log.err("Anime '{}' was not found in the database", .{id});
         return error.NoSuchAnime;
     };
 
-    const database_entry = database.info(i);
-    const entry = list.findWithId(link_id) orelse blk: {
-        const entry = try list.entries.addOne(allocator);
-        entry.* = .{
-            .date = datetime.Date.now(),
-            .status = .watching,
-            .episodes = 0,
-            .watched = 0,
-            .title = undefined,
-            .id = undefined,
-        };
-        break :blk entry;
-    };
+    const title = database_entry.title.slice(db.strings);
+    const entry = try list.addEntry(program.allocator, id, title);
 
-    // Always update the entry to have newest link id and title.
-    entry.id = database_entry.id();
-    entry.title = database_entry.title;
+    return action(list, entry, database_entry.*);
+}
 
-    switch (action) {
-        .complete => {
-            entry.date = datetime.Date.now();
-            entry.status = .complete;
-            entry.watched += 1;
-            entry.episodes = database_entry.episodes;
-        },
-        .drop => {
-            entry.date = datetime.Date.now();
-            entry.status = .dropped;
-        },
-        .on_hold => {
-            entry.date = datetime.Date.now();
-            entry.status = .on_hold;
-        },
-        .plan_to_watch => {
-            entry.date = datetime.Date.now();
-            entry.status = .plan_to_watch;
-        },
-        .watching => {
-            entry.date = datetime.Date.now();
-            entry.status = .watching;
-        },
-        .watch_episode => if (entry.episodes < database_entry.episodes) {
-            entry.date = datetime.Date.now();
-            entry.episodes += 1;
-            entry.status = .watching;
-            if (entry.episodes == database_entry.episodes) {
-                entry.status = .complete;
-                entry.watched += 1;
-            }
-        },
-        .remove => {
-            const index = (@intFromPtr(entry) - @intFromPtr(list.entries.items.ptr)) /
-                @sizeOf(anime.Entry);
-            _ = list.entries.swapRemove(index);
-        },
-        .update => switch (entry.status) {
-            .complete => entry.episodes = database_entry.episodes,
-            .dropped, .on_hold, .plan_to_watch, .watching => entry.watched = 0,
-        },
+fn completeAction(_: *List, list_entry: *List.Entry, database_entry: Database.Entry) void {
+    list_entry.date = datetime.Date.now();
+    list_entry.status = .complete;
+    list_entry.watched += 1;
+    list_entry.episodes = database_entry.episodes;
+}
+
+fn onHoldAction(_: *List, list_entry: *List.Entry, _: Database.Entry) void {
+    list_entry.date = datetime.Date.now();
+    list_entry.status = .dropped;
+}
+
+fn dropAction(_: *List, list_entry: *List.Entry, _: Database.Entry) void {
+    list_entry.date = datetime.Date.now();
+    list_entry.status = .on_hold;
+}
+
+fn planToWatchAction(_: *List, list_entry: *List.Entry, _: Database.Entry) void {
+    list_entry.date = datetime.Date.now();
+    list_entry.status = .plan_to_watch;
+}
+
+fn watchingAction(_: *List, list_entry: *List.Entry, _: Database.Entry) void {
+    list_entry.date = datetime.Date.now();
+    list_entry.status = .watching;
+}
+
+fn watchEpisodeAction(_: *List, list_entry: *List.Entry, database_entry: Database.Entry) void {
+    switch (list_entry.status) {
+        .complete => list_entry.episodes = database_entry.episodes,
+        .dropped, .on_hold, .plan_to_watch, .watching => list_entry.watched = 0,
     }
 }
 
-fn loadList(allocator: mem.Allocator) !anime.List {
+fn removeAction(list: *List, list_entry: *List.Entry, _: Database.Entry) void {
+    const index = (@intFromPtr(list_entry) - @intFromPtr(list.entries.items.ptr)) / @sizeOf(List.Entry);
+    _ = list.entries.swapRemove(index);
+}
+
+fn updateAction(_: *List, list_entry: *List.Entry, database_entry: Database.Entry) void {
+    if (list_entry.episodes < database_entry.episodes) {
+        list_entry.episodes += 1;
+        list_entry.status = .watching;
+        if (list_entry.episodes == database_entry.episodes) {
+            list_entry.status = .complete;
+            list_entry.watched += 1;
+        }
+    }
+}
+
+const program_name = "aniz";
+const list_name = "list";
+const database_json_name = "database.json";
+const database_bin_name = "database.bin";
+
+fn download(client: *std.http.Client, uri_str: []const u8, writer: anytype) !void {
+    const uri = try std.Uri.parse(uri_str);
+    var header_buffer: [std.mem.page_size]u8 = undefined;
+    var request = try client.open(.GET, uri, .{
+        .server_header_buffer = &header_buffer,
+        .keep_alive = false,
+    });
+    defer request.deinit();
+
+    try request.send();
+    try request.wait();
+
+    if (request.response.status != .ok)
+        return error.HttpServerRepliedWithUnsucessfulResponse;
+
+    return pipe(request.reader(), writer);
+}
+
+fn pipe(reader: anytype, writer: anytype) !void {
+    var buf: [std.mem.page_size]u8 = undefined;
+    while (true) {
+        const len = try reader.read(&buf);
+        if (len == 0)
+            break;
+
+        try writer.writeAll(buf[0..len]);
+    }
+}
+
+fn loadDatabase(allocator: std.mem.Allocator) !Database {
+    var data_dir = try openFolder(.cache, .{});
+    defer data_dir.close();
+
+    const file = try data_dir.openFile(database_bin_name, .{});
+    defer file.close();
+
+    var res = try Database.deserializeFromBinary(allocator, file.reader());
+    errdefer res.deinit(allocator);
+
+    if ((try file.getPos()) != (try file.getEndPos()))
+        return error.FileNotFullyRead;
+
+    return res;
+}
+
+fn loadList(allocator: std.mem.Allocator) !List {
     var data_dir = try openFolder(.data, .{});
     defer data_dir.close();
 
     const data = data_dir.readFileAlloc(
         allocator,
         list_name,
-        math.maxInt(usize),
+        std.math.maxInt(usize),
     ) catch |err| switch (err) {
         error.FileNotFound => "",
         else => |e| return e,
     };
     defer allocator.free(data);
 
-    return try anime.List.fromDsv(allocator, data);
+    return List.deserializeFromTsv(allocator, data);
 }
 
-fn saveList(list: anime.List) !void {
+fn saveList(list: List) !void {
     var data_dir = try openFolder(.data, .{});
     defer data_dir.close();
 
     var file = try data_dir.atomicFile(list_name, .{});
     defer file.deinit();
 
-    var buffered_file = io.bufferedWriter(file.file.writer());
-    const writer = buffered_file.writer();
-    try list.writeToDsv(writer);
+    list.sort();
+
+    var buffered_file = std.io.bufferedWriter(file.file.writer());
+    try list.serializeToTsv(buffered_file.writer());
+
     try buffered_file.flush();
     try file.finish();
 }
 
-fn openFolder(folder: folders.KnownFolder, flags: fs.Dir.OpenDirOptions) !fs.Dir {
-    var buf: [fs.max_path_bytes]u8 = undefined;
-    var fba = heap.FixedBufferAllocator.init(&buf);
+fn openFolder(folder: folders.KnownFolder, flags: std.fs.Dir.OpenDirOptions) !std.fs.Dir {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&buf);
     var dir = (try folders.open(fba.allocator(), folder, flags)) orelse
         return error.NoCacheDir;
     defer dir.close();
 
-    return makeAndOpenDir(dir, program_name);
+    return dir.makeOpenPath(program_name, flags);
 }
 
-fn makeAndOpenDir(dir: fs.Dir, sub_path: []const u8) !fs.Dir {
-    dir.makeDir(sub_path) catch |err| switch (err) {
-        error.PathAlreadyExists => {},
-        else => |new_err| return new_err,
-    };
-    return dir.openDir(sub_path, .{});
+test {
+    _ = ArgParser;
+    _ = Database;
+    _ = List;
 }
 
-fn infoScoredMatch(pattern: []const u8, info_index: usize) usize {
-    var score = scoredMatch(pattern, database.title[info_index].toStringZ());
-    for (database.synonyms(info_index)) |synonym|
-        score = @min(score, scoredMatch(pattern, synonym.toStringZ()));
+const ArgParser = @import("ArgParser.zig");
+const Database = @import("Database.zig");
+const List = @import("List.zig");
 
-    return score;
-}
-
-// Lower score is better
-fn scoredMatch(pattern: []const u8, str: [*:0]const u8) usize {
-    var score: usize = 0;
-    var last_match: usize = 0;
-    var i: usize = 0;
-    for (pattern) |c| {
-        while (str[i] != 0) {
-            defer i += 1;
-
-            if (std.ascii.toLower(c) != std.ascii.toLower(str[i]))
-                continue;
-
-            score += @intFromBool(c != str[i]);
-            score += i -| (last_match + 1);
-            last_match = i;
-            break;
-        } else return math.maxInt(usize);
-    }
-
-    // Find length by going to end of string
-    while (str[i] != 0) : (i += 1) {}
-
-    const len = i;
-    score += ((len - pattern.len) * 2) * @intFromBool(pattern.len != 0);
-    return score;
-}
-
-test "match" {
-    try std.testing.expectEqual(@as(usize, math.maxInt(usize)), scoredMatch("abc", "ab"));
-    try std.testing.expectEqual(@as(usize, 0), scoredMatch("", "abc"));
-    try std.testing.expectEqual(@as(usize, 0), scoredMatch("abc", "abc"));
-    try std.testing.expectEqual(@as(usize, 1), scoredMatch("abc", "Abc"));
-    try std.testing.expectEqual(@as(usize, 2), scoredMatch("abc", "ABc"));
-    try std.testing.expectEqual(@as(usize, 3), scoredMatch("abc", "ABC"));
-    try std.testing.expectEqual(@as(usize, 3), scoredMatch("abc", "abdc"));
-    try std.testing.expectEqual(@as(usize, 0), scoredMatch("attack on titan", "attack on titan"));
-    try std.testing.expectEqual(@as(usize, 3), scoredMatch("attack on titan", "Attack On Titan"));
-    try std.testing.expectEqual(@as(usize, 0), scoredMatch("Clannad", "Clannad"));
-    try std.testing.expectEqual(@as(usize, 125), scoredMatch("Clannad", "BJ Special: Hyakumannen Chikyuu no Tabi Bander Book"));
-}
+const datetime = @import("datetime");
+const folders = @import("folders");
+const std = @import("std");
