@@ -1,0 +1,28 @@
+name: Release
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      matrix:
+        target: [x86_64-linux-musl]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: master
+
+      - run: |
+          zig build -Doptimize=ReleaseSafe -Dstrip -Dcpu=baseline -Dtarget=${{ matrix.target }}
+          mv zig-out/bin/aniz zig-out/bin/aniz-${{ matrix.target }}
+
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} zig-out/bin/aniz-${{ matrix.target }}

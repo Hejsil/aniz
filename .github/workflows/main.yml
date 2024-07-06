@@ -9,9 +9,10 @@ jobs:
   test:
     strategy:
       matrix:
+        os: [ubuntu-latest]
         step: [install, test]
-        optimize: [Debug, ReleaseSafe, ReleaseSmall, ReleaseFast]
-    runs-on: ubuntu-latest
+        optimize: [Debug, ReleaseSmall, ReleaseSafe, ReleaseFast]
+    runs-on: ${{matrix.os}}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,7 +20,7 @@ jobs:
       - uses: goto-bus-stop/setup-zig@v2
         with:
           version: master
-      - run: zig build ${{matrix.step}} -Doptimize=${{ matrix.optimize}}
+      - run: zig build ${{ matrix.step }} -Doptimize=${{ matrix.optimize }}
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -27,4 +28,4 @@ jobs:
       - uses: goto-bus-stop/setup-zig@v2
         with:
           version: master
-      - run: zig fmt --check src build.zig
+      - run: zig fmt --check .
