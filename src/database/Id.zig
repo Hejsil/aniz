@@ -3,10 +3,11 @@ id: u32,
 
 pub fn fromUrl(url: []const u8) !Id {
     for (std.meta.tags(Site)) |site| {
-        const site_url = site.url();
-        if (std.mem.startsWith(u8, url, site_url)) {
-            const id = try std.fmt.parseUnsigned(u32, url[site_url.len..], 10);
-            return Id{ .site = site, .id = id };
+        for (site.urls()) |site_url| {
+            if (std.mem.startsWith(u8, url, site_url)) {
+                const id = try std.fmt.parseUnsigned(u32, url[site_url.len..], 10);
+                return Id{ .site = site, .id = id };
+            }
         }
     }
 
@@ -35,13 +36,32 @@ pub const Site = enum(u8) {
     pub const all = std.meta.tags(Site);
 
     pub fn url(site: Site) []const u8 {
+        return site.urls()[0];
+    }
+
+    /// The first url in the slice returned is the current url for that site. Anything after are
+    /// old or alternative urls for the site.
+    pub fn urls(site: Site) []const []const u8 {
         return switch (site) {
-            .anidb => "https://anidb.net/anime/",
-            .anilist => "https://anilist.co/anime/",
-            .anisearch => "https://anisearch.com/anime/",
-            .kitsu => "https://kitsu.io/anime/",
-            .livechart => "https://livechart.me/anime/",
-            .myanimelist => "https://myanimelist.net/anime/",
+            .anidb => &.{
+                "https://anidb.net/anime/",
+            },
+            .anilist => &.{
+                "https://anilist.co/anime/",
+            },
+            .anisearch => &.{
+                "https://anisearch.com/anime/",
+            },
+            .kitsu => &.{
+                "https://kitsu.app/anime/",
+                "https://kitsu.io/anime/",
+            },
+            .livechart => &.{
+                "https://livechart.me/anime/",
+            },
+            .myanimelist => &.{
+                "https://myanimelist.net/anime/",
+            },
         };
     }
 };

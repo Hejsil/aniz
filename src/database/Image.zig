@@ -1,6 +1,6 @@
-//! Image urls in the anime-offline-database all follow a similar pattern. They all start with a base url and then
-//! have a path that is unique to the image. To save on memory, we only store the path of the image url and then an
-//! enum that represents the base url.
+//! Image urls in the anime-offline-database all follow a similar pattern. They all start with a
+//! base url and then have a path that is unique to the image. To save on memory, we only store
+//! the path of the image url and then an enum that represents the base url.
 
 base: Base,
 path: []const u8,
@@ -38,6 +38,7 @@ pub const Base = enum(u8) {
     myanimelist2,
     notifymoe1,
     notifymoe2,
+    kitsu3,
 
     pub fn fromUrl(str: []const u8) !Image.Base {
         for (std.meta.tags(Image.Base)) |base| {
@@ -67,6 +68,7 @@ pub const Base = enum(u8) {
             .animeplanet1 => "https://cdn.anime-planet.com/images/anime/default/",
             .animeplanet2 => "https://cdn.anime-planet.com/anime/primary/",
             .anidb => "https://cdn.anidb.net/images/main/",
+            .kitsu3 => "https://media.kitsu.app/anime/",
         };
     }
 };
