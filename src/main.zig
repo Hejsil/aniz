@@ -370,18 +370,6 @@ fn watchingAction(_: *List, list_entry: *List.Entry, _: Database.Entry) void {
 }
 
 fn watchEpisodeAction(_: *List, list_entry: *List.Entry, database_entry: Database.Entry) void {
-    switch (list_entry.status) {
-        .complete => list_entry.episodes = database_entry.episodes,
-        .dropped, .on_hold, .plan_to_watch, .watching => list_entry.watched = 0,
-    }
-}
-
-fn removeAction(list: *List, list_entry: *List.Entry, _: Database.Entry) void {
-    const index = (@intFromPtr(list_entry) - @intFromPtr(list.entries.items.ptr)) / @sizeOf(List.Entry);
-    _ = list.entries.swapRemove(index);
-}
-
-fn updateAction(_: *List, list_entry: *List.Entry, database_entry: Database.Entry) void {
     if (list_entry.episodes < database_entry.episodes) {
         list_entry.episodes += 1;
         list_entry.status = .watching;
@@ -389,6 +377,19 @@ fn updateAction(_: *List, list_entry: *List.Entry, database_entry: Database.Entr
             list_entry.status = .complete;
             list_entry.watched += 1;
         }
+    }
+}
+
+fn removeAction(list: *List, list_entry: *List.Entry, _: Database.Entry) void {
+    const index = (@intFromPtr(list_entry) - @intFromPtr(list.entries.items.ptr)) /
+        @sizeOf(List.Entry);
+    _ = list.entries.swapRemove(index);
+}
+
+fn updateAction(_: *List, list_entry: *List.Entry, database_entry: Database.Entry) void {
+    switch (list_entry.status) {
+        .complete => list_entry.episodes = database_entry.episodes,
+        .dropped, .on_hold, .plan_to_watch, .watching => list_entry.watched = 0,
     }
 }
 
