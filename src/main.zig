@@ -351,12 +351,12 @@ fn completeAction(_: *List, list_entry: *List.Entry, database_entry: Database.En
 
 fn onHoldAction(_: *List, list_entry: *List.Entry, _: Database.Entry) void {
     list_entry.date = datetime.Date.now();
-    list_entry.status = .dropped;
+    list_entry.status = .on_hold;
 }
 
 fn dropAction(_: *List, list_entry: *List.Entry, _: Database.Entry) void {
     list_entry.date = datetime.Date.now();
-    list_entry.status = .on_hold;
+    list_entry.status = .dropped;
 }
 
 fn planToWatchAction(_: *List, list_entry: *List.Entry, _: Database.Entry) void {
