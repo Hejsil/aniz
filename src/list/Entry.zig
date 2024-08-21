@@ -1,4 +1,4 @@
-date: datetime.Date,
+date: datetime.datetime.Date,
 status: Status,
 episodes: u16,
 watched: u16,

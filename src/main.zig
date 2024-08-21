@@ -343,34 +343,35 @@ fn manipulateAnimeInList(
 }
 
 fn completeAction(_: *List, list_entry: *List.Entry, database_entry: Database.Entry) void {
-    list_entry.date = datetime.Date.now();
+    list_entry.date = datetime.datetime.Date.now();
     list_entry.status = .complete;
     list_entry.watched += 1;
     list_entry.episodes = database_entry.episodes;
 }
 
 fn onHoldAction(_: *List, list_entry: *List.Entry, _: Database.Entry) void {
-    list_entry.date = datetime.Date.now();
+    list_entry.date = datetime.datetime.Date.now();
     list_entry.status = .on_hold;
 }
 
 fn dropAction(_: *List, list_entry: *List.Entry, _: Database.Entry) void {
-    list_entry.date = datetime.Date.now();
+    list_entry.date = datetime.datetime.Date.now();
     list_entry.status = .dropped;
 }
 
 fn planToWatchAction(_: *List, list_entry: *List.Entry, _: Database.Entry) void {
-    list_entry.date = datetime.Date.now();
+    list_entry.date = datetime.datetime.Date.now();
     list_entry.status = .plan_to_watch;
 }
 
 fn watchingAction(_: *List, list_entry: *List.Entry, _: Database.Entry) void {
-    list_entry.date = datetime.Date.now();
+    list_entry.date = datetime.datetime.Date.now();
     list_entry.status = .watching;
 }
 
 fn watchEpisodeAction(_: *List, list_entry: *List.Entry, database_entry: Database.Entry) void {
     if (list_entry.episodes < database_entry.episodes) {
+        list_entry.date = datetime.datetime.Date.now();
         list_entry.episodes += 1;
         list_entry.status = .watching;
         if (list_entry.episodes == database_entry.episodes) {

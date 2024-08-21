@@ -32,7 +32,7 @@ pub fn deserializeFromTsv(allocator: std.mem.Allocator, csv: []const u8) !List {
             return error.Invalid;
 
         try list.entries.append(allocator, .{
-            .date = try datetime.Date.parseIso(date_str),
+            .date = try datetime.datetime.Date.parseIso(date_str),
             .status = Entry.Status.fromString(status_str) orelse return error.Invalid,
             .episodes = try std.fmt.parseUnsigned(u16, episodes_str, 0),
             .watched = try std.fmt.parseUnsigned(u16, watched_str, 0),
@@ -55,7 +55,7 @@ pub fn addEntry(list: *List, allocator: std.mem.Allocator, id: Id, title: []cons
     const entry = list.find(id) orelse blk: {
         const entry = try list.entries.addOne(allocator);
         entry.* = .{
-            .date = datetime.Date.now(),
+            .date = datetime.datetime.Date.now(),
             .status = .watching,
             .episodes = 0,
             .watched = 0,

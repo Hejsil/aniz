@@ -12,6 +12,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .strip = strip,
     });
+    b.installArtifact(aniz);
 
     const test_step = b.step("test", "Run all tests in all modes.");
     const tests = b.addTest(.{
@@ -22,17 +23,12 @@ pub fn build(b: *std.Build) void {
     });
     const run_tests = b.addRunArtifact(tests);
     test_step.dependOn(&run_tests.step);
-    b.installArtifact(aniz);
 
-    const datetime_module = b.createModule(.{
-        .root_source_file = b.path("lib/zig-datetime/src/datetime.zig"),
-    });
-    const folders_module = b.createModule(.{
-        .root_source_file = b.path("lib/known-folders/known-folders.zig"),
-    });
+    const datetime = b.dependency("datetime", .{});
+    const folders = b.dependency("folders", .{});
 
     for ([_]*std.Build.Step.Compile{ aniz, tests }) |comp| {
-        comp.root_module.addImport("datetime", datetime_module);
-        comp.root_module.addImport("folders", folders_module);
+        comp.root_module.addImport("datetime", datetime.module("zig-datetime"));
+        comp.root_module.addImport("folders", folders.module("known-folders"));
     }
 }
