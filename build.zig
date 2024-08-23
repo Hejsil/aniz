@@ -11,6 +11,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .strip = strip,
+        .single_threaded = true,
     });
     b.installArtifact(aniz);
 
@@ -20,6 +21,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .strip = strip,
+        .single_threaded = true,
     });
     const run_tests = b.addRunArtifact(tests);
     test_step.dependOn(&run_tests.step);
