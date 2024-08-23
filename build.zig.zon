@@ -10,6 +10,10 @@
             .url = "https://github.com/ziglibs/known-folders/archive/1cceeb70e77dec941a4178160ff6c8d05a74de6f.tar.gz",
             .hash = "12205f5e7505c96573f6fc5144592ec38942fb0a326d692f9cddc0c7dd38f9028f29",
         },
+        .webui = .{
+            .url = "https://github.com/webui-dev/zig-webui/archive/39c1f800b9aa6f7c0f26ede6b1736c0c48c65948.tar.gz",
+            .hash = "1220ba1989e163fe5b40da19b617cea09beedb52507ef92d0e201807e93937951e4a",
+        },
     },
     .paths = .{
         "build.zig",
