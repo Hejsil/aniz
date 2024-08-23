@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) void {
 
     const aniz = b.addExecutable(.{
         .name = "aniz",
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("src/aniz.zig"),
         .target = target,
         .optimize = optimize,
         .strip = strip,
@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run all tests in all modes.");
     const tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("src/aniz.zig"),
         .target = target,
         .optimize = optimize,
         .strip = strip,

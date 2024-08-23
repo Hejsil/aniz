@@ -6,13 +6,27 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(gpa);
     defer std.process.argsFree(gpa, args);
 
-    return mainWithArgs(gpa, args[1..]);
+    var stdout_buffered = std.io.bufferedWriter(std.io.getStdOut().writer());
+    const stdout = stdout_buffered.writer();
+
+    try mainFull(.{
+        .allocator = gpa,
+        .args = args[1..],
+        .stdout = stdout.any(),
+    });
+
+    return stdout_buffered.flush();
 }
 
-pub fn mainWithArgs(allocator: std.mem.Allocator, args: []const []const u8) !void {
+pub fn mainFull(options: struct {
+    allocator: std.mem.Allocator,
+    args: []const []const u8,
+    stdout: std.io.AnyWriter,
+}) !void {
     var program = Program{
-        .allocator = allocator,
-        .args = .{ .args = args },
+        .allocator = options.allocator,
+        .args = .{ .args = options.args },
+        .stdout = options.stdout,
     };
 
     return program.mainCommand();
@@ -22,6 +36,7 @@ const Program = @This();
 
 allocator: std.mem.Allocator,
 args: ArgParser,
+stdout: std.io.AnyWriter,
 
 const main_usage =
     \\Usage: aniz [command] [args]
@@ -40,7 +55,7 @@ pub fn mainCommand(program: *Program) !void {
         } else if (program.args.flag(&.{"list"})) {
             return program.listSubCommand();
         } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
-            return std.io.getStdOut().writeAll(main_usage);
+            return program.stdout.writeAll(main_usage);
         } else {
             try std.io.getStdErr().writeAll(main_usage);
             return error.InvalidArgument;
@@ -70,7 +85,7 @@ fn databaseSubCommand(program: *Program) !void {
     if (program.args.flag(&.{"download"})) {
         return program.databaseDownloadCommand();
     } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
-        return std.io.getStdOut().writeAll(database_sub_usage);
+        return program.stdout.writeAll(database_sub_usage);
     } else {
         return program.databaseCommand();
     }
@@ -85,7 +100,7 @@ fn databaseCommand(program: *Program) !void {
         if (program.args.option(&.{ "-s", "--search" })) |search| {
             m_search = search;
         } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
-            return std.io.getStdOut().writeAll(database_sub_usage);
+            return program.stdout.writeAll(database_sub_usage);
         } else {
             const url = program.args.eat();
             const id = try Database.Id.fromUrl(url);
@@ -103,16 +118,13 @@ fn databaseCommand(program: *Program) !void {
     };
     defer db.deinit(program.allocator);
 
-    var stdout_buffered = std.io.bufferedWriter(std.io.getStdOut().writer());
-    const stdout = stdout_buffered.writer();
-
     if (ids.count() == 0 and m_search == null) {
         // Fast path if no ids or search is provided.
         for (db.entries) |entry| {
-            try entry.serializeToDsv(db.strings, stdout);
-            try stdout.writeAll("\n");
+            try entry.serializeToDsv(db.strings, program.stdout);
+            try program.stdout.writeAll("\n");
         }
-        return stdout_buffered.flush();
+        return;
     }
 
     var entries_to_print = std.ArrayList(Database.Entry).init(program.allocator);
@@ -124,10 +136,9 @@ fn databaseCommand(program: *Program) !void {
     });
 
     for (entries_to_print.items) |entry| {
-        try entry.serializeToDsv(db.strings, stdout);
-        try stdout.writeAll("\n");
+        try entry.serializeToDsv(db.strings, program.stdout);
+        try program.stdout.writeAll("\n");
     }
-    try stdout_buffered.flush();
 }
 
 const database_download_usage =
@@ -138,7 +149,7 @@ const database_download_usage =
 fn databaseDownloadCommand(program: *Program) !void {
     while (!program.args.isDone()) {
         if (program.args.flag(&.{ "-h", "--help", "help" })) {
-            return std.io.getStdOut().writeAll(database_download_usage);
+            return program.stdout.writeAll(database_download_usage);
         } else {
             try std.io.getStdErr().writeAll(database_download_usage);
             return error.InvalidArgument;
@@ -212,7 +223,7 @@ fn listSubCommand(program: *Program) !void {
     } else if (program.args.flag(&.{"watching"})) {
         return program.manipulateListCommand(watchingAction);
     } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
-        return std.io.getStdOut().writeAll(list_sub_usage);
+        return program.stdout.writeAll(list_sub_usage);
     } else {
         return program.listCommand();
     }
@@ -227,7 +238,7 @@ fn listCommand(program: *Program) !void {
         if (program.args.option(&.{ "-s", "--search" })) |search| {
             m_search = search;
         } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
-            return std.io.getStdOut().writeAll(list_sub_usage);
+            return program.stdout.writeAll(list_sub_usage);
         } else {
             const url = program.args.eat();
             const id = try Database.Id.fromUrl(url);
@@ -238,16 +249,13 @@ fn listCommand(program: *Program) !void {
     var list = try loadList(program.allocator);
     defer list.deinit(program.allocator);
 
-    var stdout_buffered = std.io.bufferedWriter(std.io.getStdOut().writer());
-    const stdout = stdout_buffered.writer();
-
     if (ids.count() == 0 and m_search == null) {
         // Fast path if no ids or search is provided.
         for (list.entries.items) |entry| {
-            try entry.serializeToTsv(list.intern.sliceZ(), stdout);
-            try stdout.writeAll("\n");
+            try entry.serializeToTsv(list.intern.sliceZ(), program.stdout);
+            try program.stdout.writeAll("\n");
         }
-        return stdout_buffered.flush();
+        return;
     }
 
     var db = loadDatabase(program.allocator) catch |err| switch (err) {
@@ -272,11 +280,10 @@ fn listCommand(program: *Program) !void {
         for (entry.ids.all()) |m_id| {
             const id = m_id orelse continue;
             const list_entry = list.find(id) orelse continue;
-            try list_entry.serializeToTsv(list.intern.sliceZ(), stdout);
-            try stdout.writeAll("\n");
+            try list_entry.serializeToTsv(list.intern.sliceZ(), program.stdout);
+            try program.stdout.writeAll("\n");
         }
     }
-    try stdout_buffered.flush();
 }
 
 const manipuate_list_usage =
@@ -297,7 +304,7 @@ fn manipulateListCommand(
 
     while (!program.args.isDone()) {
         if (program.args.flag(&.{ "-h", "--help", "help" })) {
-            return std.io.getStdOut().writeAll(manipuate_list_usage);
+            return program.stdout.writeAll(manipuate_list_usage);
         } else {
             const url = program.args.eat();
             const id = try Database.Id.fromUrl(url);
