@@ -49,14 +49,14 @@ const main_usage =
 ;
 
 pub fn mainCommand(program: *Program) !void {
-    while (!program.args.isDone()) {
-        if (program.args.flag(&.{"database"})) {
+    while (program.args.next()) {
+        if (program.args.flag(&.{"database"}))
             return program.databaseSubCommand();
-        } else if (program.args.flag(&.{"list"})) {
+        if (program.args.flag(&.{"list"}))
             return program.listSubCommand();
-        } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
+        if (program.args.flag(&.{ "-h", "--help", "help" }))
             return program.stdout.writeAll(main_usage);
-        } else {
+        if (program.args.positional()) |_| {
             try std.io.getStdErr().writeAll(main_usage);
             return error.InvalidArgument;
         }
@@ -79,16 +79,14 @@ const database_sub_usage =
 ;
 
 fn databaseSubCommand(program: *Program) !void {
-    if (program.args.isDone())
-        return program.databaseCommand();
-
-    if (program.args.flag(&.{"download"})) {
-        return program.databaseDownloadCommand();
-    } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
-        return program.stdout.writeAll(database_sub_usage);
-    } else {
-        return program.databaseCommand();
+    if (program.args.next()) {
+        if (program.args.flag(&.{"download"}))
+            return program.databaseDownloadCommand();
+        if (program.args.flag(&.{ "-h", "--help", "help" }))
+            return program.stdout.writeAll(database_sub_usage);
     }
+
+    return program.databaseCommand();
 }
 
 fn databaseCommand(program: *Program) !void {
@@ -96,13 +94,12 @@ fn databaseCommand(program: *Program) !void {
     var ids = std.AutoArrayHashMap(Database.Id, void).init(program.allocator);
     defer ids.deinit();
 
-    while (!program.args.isDone()) {
-        if (program.args.option(&.{ "-s", "--search" })) |search| {
+    while (program.args.next()) {
+        if (program.args.option(&.{ "-s", "--search" })) |search|
             m_search = search;
-        } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
+        if (program.args.flag(&.{ "-h", "--help", "help" }))
             return program.stdout.writeAll(database_sub_usage);
-        } else {
-            const url = program.args.eat();
+        if (program.args.positional()) |url| {
             const id = try Database.Id.fromUrl(url);
             try ids.put(id, {});
         }
@@ -147,17 +144,17 @@ const database_download_usage =
 ;
 
 fn databaseDownloadCommand(program: *Program) !void {
-    while (!program.args.isDone()) {
-        if (program.args.flag(&.{ "-h", "--help", "help" })) {
+    while (program.args.next()) {
+        if (program.args.flag(&.{ "-h", "--help", "help" }))
             return program.stdout.writeAll(database_download_usage);
-        } else {
+        if (program.args.positional()) |_| {
             try std.io.getStdErr().writeAll(database_download_usage);
             return error.InvalidArgument;
         }
     }
 
     var http_client = std.http.Client{ .allocator = program.allocator };
-    errdefer http_client.deinit();
+    defer http_client.deinit();
 
     var data_dir = try openFolder(.cache, .{});
     defer data_dir.close();
@@ -203,30 +200,28 @@ const list_sub_usage =
 ;
 
 fn listSubCommand(program: *Program) !void {
-    if (program.args.isDone())
-        return program.listCommand();
-
-    if (program.args.flag(&.{"complete"})) {
-        return program.manipulateListCommand(completeAction);
-    } else if (program.args.flag(&.{"drop"})) {
-        return program.manipulateListCommand(dropAction);
-    } else if (program.args.flag(&.{"on-hold"})) {
-        return program.manipulateListCommand(onHoldAction);
-    } else if (program.args.flag(&.{"plan-to-watch"})) {
-        return program.manipulateListCommand(planToWatchAction);
-    } else if (program.args.flag(&.{"remove"})) {
-        return program.manipulateListCommand(removeAction);
-    } else if (program.args.flag(&.{"update"})) {
-        return program.manipulateListCommand(updateAction);
-    } else if (program.args.flag(&.{"watch-episode"})) {
-        return program.manipulateListCommand(watchEpisodeAction);
-    } else if (program.args.flag(&.{"watching"})) {
-        return program.manipulateListCommand(watchingAction);
-    } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
-        return program.stdout.writeAll(list_sub_usage);
-    } else {
-        return program.listCommand();
+    if (program.args.next()) {
+        if (program.args.flag(&.{"complete"}))
+            return program.manipulateListCommand(completeAction);
+        if (program.args.flag(&.{"drop"}))
+            return program.manipulateListCommand(dropAction);
+        if (program.args.flag(&.{"on-hold"}))
+            return program.manipulateListCommand(onHoldAction);
+        if (program.args.flag(&.{"plan-to-watch"}))
+            return program.manipulateListCommand(planToWatchAction);
+        if (program.args.flag(&.{"remove"}))
+            return program.manipulateListCommand(removeAction);
+        if (program.args.flag(&.{"update"}))
+            return program.manipulateListCommand(updateAction);
+        if (program.args.flag(&.{"watch-episode"}))
+            return program.manipulateListCommand(watchEpisodeAction);
+        if (program.args.flag(&.{"watching"}))
+            return program.manipulateListCommand(watchingAction);
+        if (program.args.flag(&.{ "-h", "--help", "help" }))
+            return program.stdout.writeAll(list_sub_usage);
     }
+
+    return program.listCommand();
 }
 
 fn listCommand(program: *Program) !void {
@@ -234,13 +229,12 @@ fn listCommand(program: *Program) !void {
     var ids = std.AutoArrayHashMap(Database.Id, void).init(program.allocator);
     defer ids.deinit();
 
-    while (!program.args.isDone()) {
-        if (program.args.option(&.{ "-s", "--search" })) |search| {
+    while (program.args.next()) {
+        if (program.args.option(&.{ "-s", "--search" })) |search|
             m_search = search;
-        } else if (program.args.flag(&.{ "-h", "--help", "help" })) {
+        if (program.args.flag(&.{ "-h", "--help", "help" }))
             return program.stdout.writeAll(list_sub_usage);
-        } else {
-            const url = program.args.eat();
+        if (program.args.positional()) |url| {
             const id = try Database.Id.fromUrl(url);
             try ids.put(id, {});
         }
@@ -295,18 +289,14 @@ const manipuate_list_usage =
     \\
 ;
 
-fn manipulateListCommand(
-    program: *Program,
-    action: *const fn (*List, *List.Entry, Database.Entry) void,
-) !void {
+fn manipulateListCommand(program: *Program, action: Action) !void {
     var ids = std.AutoArrayHashMap(Database.Id, void).init(program.allocator);
     defer ids.deinit();
 
-    while (!program.args.isDone()) {
-        if (program.args.flag(&.{ "-h", "--help", "help" })) {
+    while (program.args.next()) {
+        if (program.args.flag(&.{ "-h", "--help", "help" }))
             return program.stdout.writeAll(manipuate_list_usage);
-        } else {
-            const url = program.args.eat();
+        if (program.args.positional()) |url| {
             const id = try Database.Id.fromUrl(url);
             try ids.put(id, {});
         }
@@ -325,29 +315,22 @@ fn manipulateListCommand(
     var list = try loadList(program.allocator);
     defer list.deinit(program.allocator);
 
-    for (ids.keys()) |id|
-        try program.manipulateAnimeInList(&db, &list, id, action);
+    for (ids.keys()) |id| {
+        const database_entry = db.findWithId(id) orelse {
+            std.log.err("Anime '{}' was not found in the database", .{id});
+            return error.NoSuchAnime;
+        };
+
+        const title = database_entry.title.slice(db.strings);
+        const entry = try list.addEntry(program.allocator, id, title);
+
+        action(&list, entry, database_entry.*);
+    }
 
     try saveList(list);
 }
 
-fn manipulateAnimeInList(
-    program: *Program,
-    db: *const Database,
-    list: *List,
-    id: Database.Id,
-    action: *const fn (*List, *List.Entry, Database.Entry) void,
-) !void {
-    const database_entry = db.findWithId(id) orelse {
-        std.log.err("Anime '{}' was not found in the database", .{id});
-        return error.NoSuchAnime;
-    };
-
-    const title = database_entry.title.slice(db.strings);
-    const entry = try list.addEntry(program.allocator, id, title);
-
-    return action(list, entry, database_entry.*);
-}
+const Action = *const fn (*List, *List.Entry, Database.Entry) void;
 
 fn completeAction(_: *List, list_entry: *List.Entry, database_entry: Database.Entry) void {
     list_entry.date = datetime.datetime.Date.now();
