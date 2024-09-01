@@ -30,10 +30,11 @@ pub const Entry = extern struct {
     picture_base: Image.Base,
     thumbnail_base: Image.Base,
 
-    pack: packed struct(u8) {
+    pack: packed struct(u16) {
         kind: Kind,
         season: Season,
         status: Status,
+        pad: u8 = 0,
     },
 
     pub const Season = enum(u3) {
