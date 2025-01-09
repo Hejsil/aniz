@@ -23,10 +23,23 @@ pub const Anime = struct {
     synonyms: []const []const u8,
     relatedAnime: []const []const u8,
     tags: []const []const u8,
+    duration: Duration = .{
+        .value = 0,
+        .unit = .SECONDS,
+    },
 
     const SeasonAndYear = struct {
         season: Season,
         year: u16 = 0,
+    };
+
+    const Duration = struct {
+        value: u16,
+        unit: Unit,
+
+        const Unit = enum {
+            SECONDS,
+        };
     };
 };
 
