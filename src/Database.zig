@@ -346,7 +346,7 @@ pub fn deserializeFromJson(allocator: std.mem.Allocator, json: []const u8) !Data
 }
 
 pub fn serializeToJson(database: Database, writer: anytype, options: std.json.StringifyOptions) !void {
-    var buf: [std.mem.page_size]u8 = undefined;
+    var buf: [1024 * 4]u8 = undefined;
     var out = std.json.writeStream(writer, options);
 
     try out.beginObject();

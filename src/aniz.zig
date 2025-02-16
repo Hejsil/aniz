@@ -391,7 +391,7 @@ const database_bin_name = "database.bin";
 
 fn download(client: *std.http.Client, uri_str: []const u8, writer: anytype) !void {
     const uri = try std.Uri.parse(uri_str);
-    var header_buffer: [std.mem.page_size]u8 = undefined;
+    var header_buffer: [1024 * 4]u8 = undefined;
     var request = try client.open(.GET, uri, .{
         .server_header_buffer = &header_buffer,
         .keep_alive = false,
@@ -403,13 +403,13 @@ fn download(client: *std.http.Client, uri_str: []const u8, writer: anytype) !voi
     try request.wait();
 
     if (request.response.status != .ok)
-        return error.HttpServerRepliedWithUnsucessfulResponse;
+        return error.HttpServerRepliedWithUnsuccessfulResponse;
 
     return pipe(request.reader(), writer);
 }
 
 fn pipe(reader: anytype, writer: anytype) !void {
-    var buf: [std.mem.page_size]u8 = undefined;
+    var buf: [1024 * 4]u8 = undefined;
     while (true) {
         const len = try reader.read(&buf);
         if (len == 0)
