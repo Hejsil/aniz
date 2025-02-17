@@ -429,7 +429,7 @@ pub fn serializeToJson(database: Database, writer: anytype, options: std.json.St
 }
 
 const binary_magic: [4]u8 = "ANIZ".*;
-const binary_version: u16 = 1;
+const binary_version: u16 = 2;
 
 const BinaryHeader = extern struct {
     magic: [4]u8 = binary_magic,
@@ -847,7 +847,7 @@ test "binary version should be updated" {
     std.crypto.hash.sha2.Sha256.hash(binary_serialized.items, &digest, .{});
 
     // If this test fails, then the binary version should be updated
-    const expected_hash = "67ee3d157b8c899d33b533ae14ca71f4175d990d24a0e6b68d0e1883422fdac7";
+    const expected_hash = "8f901cea56125b39f98eed8967b0120e5e2d3426ff4f67a469fb5b79fbf32065";
     try std.testing.expectEqualStrings(expected_hash, &std.fmt.bytesToHex(digest, .lower));
 }
 
