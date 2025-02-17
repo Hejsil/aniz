@@ -149,10 +149,12 @@ test fuzzyScoreString {
 pub const Ids = extern struct {
     anidb: Id.Optional = .none,
     anilist: Id.Optional = .none,
+    animecountdown: Id.Optional = .none,
     anisearch: Id.Optional = .none,
     kitsu: Id.Optional = .none,
     livechart: Id.Optional = .none,
     myanimelist: Id.Optional = .none,
+    simkl: Id.Optional = .none,
 
     pub fn primary(ids: Ids) Id {
         return ids.primaryChecked() orelse unreachable;

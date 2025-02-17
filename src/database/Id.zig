@@ -28,10 +28,12 @@ pub fn format(
 pub const Site = enum(u8) {
     anidb,
     anilist,
+    animecountdown,
     anisearch,
     kitsu,
     livechart,
     myanimelist,
+    simkl,
 
     pub const all = std.meta.tags(Site);
 
@@ -43,24 +45,17 @@ pub const Site = enum(u8) {
     /// old or alternative urls for the site.
     pub fn urls(site: Site) []const []const u8 {
         return switch (site) {
-            .anidb => &.{
-                "https://anidb.net/anime/",
-            },
-            .anilist => &.{
-                "https://anilist.co/anime/",
-            },
-            .anisearch => &.{
-                "https://anisearch.com/anime/",
-            },
+            .anidb => &.{"https://anidb.net/anime/"},
+            .anilist => &.{"https://anilist.co/anime/"},
+            .animecountdown => &.{"https://animecountdown.com/"},
+            .anisearch => &.{"https://anisearch.com/anime/"},
+            .livechart => &.{"https://livechart.me/anime/"},
+            .myanimelist => &.{"https://myanimelist.net/anime/"},
+            .simkl => &.{"https://simkl.com/anime/"},
+
             .kitsu => &.{
                 "https://kitsu.app/anime/",
                 "https://kitsu.io/anime/",
-            },
-            .livechart => &.{
-                "https://livechart.me/anime/",
-            },
-            .myanimelist => &.{
-                "https://myanimelist.net/anime/",
             },
         };
     }

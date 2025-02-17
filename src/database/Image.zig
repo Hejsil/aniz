@@ -22,8 +22,6 @@ pub fn format(
 }
 
 pub const Base = enum(u8) {
-    no_pic1,
-    no_pic2,
     anidb,
     anilist,
     animeplanet1,
@@ -33,12 +31,15 @@ pub const Base = enum(u8) {
     anisearch3,
     kitsu1,
     kitsu2,
+    kitsu3,
     livechart,
     myanimelist1,
     myanimelist2,
+    no_pic1,
+    no_pic2,
     notifymoe1,
     notifymoe2,
-    kitsu3,
+    simkl,
 
     pub fn fromUrl(str: []const u8) !Image.Base {
         for (std.meta.tags(Image.Base)) |base| {
@@ -52,23 +53,24 @@ pub const Base = enum(u8) {
 
     pub fn url(base: Image.Base) []const u8 {
         return switch (base) {
-            .no_pic1 => "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/pics/no_pic.png",
-            .no_pic2 => "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/pics/no_pic_thumbnail.png",
-            .livechart => "https://u.livechart.me/anime/",
+            .anidb => "https://cdn.anidb.net/images/main/",
             .anilist => "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/",
-            .notifymoe1 => "https://media.notify.moe/images/anime/large/",
-            .notifymoe2 => "https://media.notify.moe/images/anime/small/",
-            .kitsu1 => "https://media.kitsu.io/anime/poster_images/",
-            .kitsu2 => "https://media.kitsu.io/anime/",
-            .myanimelist1 => "https://cdn.myanimelist.net/images/anime/",
-            .myanimelist2 => "https://cdn.myanimelist.net/images/",
+            .animeplanet1 => "https://cdn.anime-planet.com/images/anime/default/",
+            .animeplanet2 => "https://cdn.anime-planet.com/anime/primary/",
             .anisearch1 => "https://cdn.anisearch.com/images/anime/cover/full/",
             .anisearch2 => "https://cdn.anisearch.com/images/anime/cover/",
             .anisearch3 => "https://www.anisearch.com/images/anime/cover/",
-            .animeplanet1 => "https://cdn.anime-planet.com/images/anime/default/",
-            .animeplanet2 => "https://cdn.anime-planet.com/anime/primary/",
-            .anidb => "https://cdn.anidb.net/images/main/",
+            .kitsu1 => "https://media.kitsu.io/anime/poster_images/",
+            .kitsu2 => "https://media.kitsu.io/anime/",
             .kitsu3 => "https://media.kitsu.app/anime/",
+            .livechart => "https://u.livechart.me/anime/",
+            .myanimelist1 => "https://cdn.myanimelist.net/images/anime/",
+            .myanimelist2 => "https://cdn.myanimelist.net/images/",
+            .no_pic1 => "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/pics/no_pic.png",
+            .no_pic2 => "https://raw.githubusercontent.com/manami-project/anime-offline-database/master/pics/no_pic_thumbnail.png",
+            .notifymoe1 => "https://media.notify.moe/images/anime/large/",
+            .notifymoe2 => "https://media.notify.moe/images/anime/small/",
+            .simkl => "https://simkl.in/posters/",
         };
     }
 };
