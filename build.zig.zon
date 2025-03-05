@@ -1,14 +1,16 @@
 .{
-    .name = "aniz",
-    .version = "0.2.2",
+    .name = .aniz,
+    .version = "0.4.0",
+    .minimum_zig_version = "0.14.0",
+    .fingerprint = 0xe478e19cc0bdae41,
     .dependencies = .{
         .datetime = .{
-            .url = "https://github.com/frmdstryr/zig-datetime/archive/70aebf28fb3e137cd84123a9349d157a74708721.tar.gz",
-            .hash = "122077215ce36e125a490e59ec1748ffd4f6ba00d4d14f7308978e5360711d72d77f",
+            .url = "https://github.com/frmdstryr/zig-datetime/archive/4d0e84cd8844c0672e0cbe247a3130750c9e0f27.tar.gz",
+            .hash = "12207944ac0f825c6812af3be4699e859a0b8ee0252b3bd6a78fceaec877a169cec0",
         },
         .folders = .{
-            .url = "https://github.com/ziglibs/known-folders/archive/1cceeb70e77dec941a4178160ff6c8d05a74de6f.tar.gz",
-            .hash = "12205f5e7505c96573f6fc5144592ec38942fb0a326d692f9cddc0c7dd38f9028f29",
+            .url = "https://github.com/ziglibs/known-folders/archive/aa24df42183ad415d10bc0a33e6238c437fc0f59.tar.gz",
+            .hash = "1220c60cec18c0c915c9d3124e9fda37e9df8c2670eaa3d0d8408bbe790e7e1bf857",
         },
     },
     .paths = .{

@@ -30,7 +30,7 @@ pub fn build(b: *std.Build) void {
     const folders = b.dependency("folders", .{});
 
     for ([_]*std.Build.Step.Compile{ aniz, tests }) |comp| {
-        comp.root_module.addImport("datetime", datetime.module("zig-datetime"));
+        comp.root_module.addImport("datetime", datetime.module("datetime"));
         comp.root_module.addImport("folders", folders.module("known-folders"));
     }
 }
