@@ -1,13 +1,13 @@
 //! The anime-offline-database schema converted to Zig code. Used for parsing the JSON database.
 //! See https://github.com/manami-project/anime-offline-database/blob/master/anime-offline-database.schema.json
 
-@"$schema": []const u8,
+@"$schema": []const u8 = "",
 license: License,
 repository: []const u8,
 scoreRange: struct {
-    minInclusive: f32,
-    maxInclusive: f32,
-},
+    minInclusive: f32 = 0.0,
+    maxInclusive: f32 = 0.0,
+} = .{},
 lastUpdate: []const u8,
 data: []const Anime,
 
