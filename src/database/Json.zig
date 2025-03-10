@@ -1,8 +1,13 @@
 //! The anime-offline-database schema converted to Zig code. Used for parsing the JSON database.
 //! See https://github.com/manami-project/anime-offline-database/blob/master/anime-offline-database.schema.json
 
+@"$schema": []const u8,
 license: License,
 repository: []const u8,
+scoreRange: struct {
+    minInclusive: f32,
+    maxInclusive: f32,
+},
 lastUpdate: []const u8,
 data: []const Anime,
 
@@ -23,10 +28,8 @@ pub const Anime = struct {
     synonyms: []const []const u8,
     relatedAnime: []const []const u8,
     tags: []const []const u8,
-    duration: Duration = .{
-        .value = 0,
-        .unit = .SECONDS,
-    },
+    duration: Duration = .{},
+    score: Score = .{},
 
     const SeasonAndYear = struct {
         season: Season,
@@ -34,12 +37,18 @@ pub const Anime = struct {
     };
 
     const Duration = struct {
-        value: u16,
-        unit: Unit,
+        value: u16 = 0,
+        unit: Unit = .SECONDS,
 
         const Unit = enum {
             SECONDS,
         };
+    };
+
+    const Score = struct {
+        arithmeticGeometricMean: f32 = 0.0,
+        arithmeticMean: f32 = 0.0,
+        median: f32 = 0.0,
     };
 };
 
