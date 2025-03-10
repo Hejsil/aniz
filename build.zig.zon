@@ -1,6 +1,6 @@
 .{
     .name = .aniz,
-    .version = "0.4.0",
+    .version = "0.4.1",
     .minimum_zig_version = "0.14.0",
     .fingerprint = 0xe478e19cc0bdae41,
     .dependencies = .{
